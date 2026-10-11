@@ -4,52 +4,49 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Vault Picker</title>
-  <meta name="description" content="Lokalen Obsidian-Vault öffnen und Notizen bearbeiten.">
-  <meta name="theme-color" content="#2b2140">
-  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Obsidian-Vault schnell durchsuchen und Notizen bearbeiten.">
+  <meta name="theme-color" content="#000000">
+  <meta name="color-scheme" content="dark">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Liste / Start -->
-  <section id="view-list" class="view">
-    <header class="bar">
-      <h1 id="vault-name">Vault Picker</h1>
-      <button id="btn-rescan" class="icon-btn" type="button" title="Neu einlesen" aria-label="Neu einlesen" hidden>⟳</button>
-    </header>
-
-    <div id="unsupported" class="notice warn" hidden>
+  <!-- Start: Vault wählen / Berechtigung -->
+  <section id="view-start" class="view center" hidden>
+    <div id="unsupported" class="notice" hidden>
       <strong>Dieser Browser wird nicht unterstützt.</strong>
       <p>Die App braucht die File System Access API (<code>showDirectoryPicker</code>).
         Die gibt es nur in Chromium-Browsern (Chrome, Edge, Brave …) auf Android und Desktop.
         iOS/iPadOS (alle Browser dort, auch Chrome) und Firefox werden <em>nicht</em> unterstützt.</p>
     </div>
-
-    <div id="actions" class="actions" hidden>
-      <button id="btn-open" class="btn primary" type="button">Vault öffnen</button>
-      <button id="btn-permission" class="btn primary" type="button" hidden>Zugriff erneut erlauben</button>
-      <p id="hint" class="hint"></p>
-    </div>
-
-    <div id="browser" hidden>
-      <div class="search">
-        <input id="search" type="search" placeholder="Dateinamen suchen …" autocomplete="off" aria-label="Dateinamen suchen">
-      </div>
-      <p id="count" class="hint"></p>
-      <div id="tree" class="tree"></div>
-      <div id="results" class="tree" hidden></div>
-      <button id="btn-other" class="btn subtle" type="button">Anderen Vault öffnen</button>
+    <div id="actions" hidden>
+      <button id="btn-open" class="btn" type="button">Vault öffnen</button>
+      <p class="hint">Wähle den Ordner deines Obsidian-Vaults.</p>
     </div>
   </section>
 
-  <!-- Editor -->
+  <!-- Suche -->
+  <section id="view-search" class="view" hidden>
+    <div class="search">
+      <input id="q" type="search" autocomplete="off" autocapitalize="off" spellcheck="false"
+             enterkeyhint="search" placeholder="Suchen …" aria-label="Suchen">
+    </div>
+    <ol id="hits" class="hits"></ol>
+    <footer class="status">
+      <span id="status"></span>
+      <button id="btn-permission" class="link" type="button" hidden>Zugriff erlauben</button>
+      <button id="btn-switch" class="link" type="button">Vault wechseln</button>
+    </footer>
+  </section>
+
+  <!-- Notiz -->
   <section id="view-editor" class="view" hidden>
     <header class="bar">
       <button id="btn-back" class="icon-btn" type="button" aria-label="Zurück">←</button>
       <h1 id="note-title" class="ellipsis"></h1>
-      <button id="btn-save" class="btn primary small" type="button" disabled>Speichern</button>
+      <button id="btn-save" class="btn small" type="button" disabled>Speichern</button>
     </header>
     <p id="note-path" class="path ellipsis"></p>
     <textarea id="editor" spellcheck="true" autocapitalize="sentences" aria-label="Notizinhalt"></textarea>
