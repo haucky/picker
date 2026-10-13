@@ -1,6 +1,7 @@
 // Feature: TILs durchscrollen und #diary/…-Tags zuweisen; Schreiben erst nach Bestätigung.
-import { addTagsToText } from '../core.js';
+import { addTagsToText, splitFrontmatter } from '../core.js';
 import { h } from './dom.js';
+import { isConfig } from './srs.js';
 
 const PREFIX = 'diary/';
 const DEFAULT_FILTER = '#life/diary';
@@ -123,6 +124,7 @@ function filterKey() {
 function computeItems() {
   const f = filterKey();
   return core.list()
+    .filter((n) => !isConfig(n.path))
     .filter((n) => !f || n.tagsLower.some((t) => t === f || t.startsWith(f + '/')))
     .filter((n) => !state.untaggedOnly || !n.tags.some(isDiary))
     .sort((a, b) => (b.date ?? b.mtime) - (a.date ?? a.mtime) || a.nameLower.localeCompare(b.nameLower, 'de'));
@@ -155,7 +157,7 @@ function formatDate(n) {
 }
 
 function bodyText(text) {
-  const lines = text.replace(/^﻿/, '').split(/\r?\n/);
+  const lines = splitFrontmatter(text).body.split(/\r?\n/);
   if (lines.length && /^\s*#[^\s#]/.test(lines[0])) lines.shift();
   return lines.join('\n').replace(/^\s*\n/, '');
 }

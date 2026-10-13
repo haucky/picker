@@ -44,15 +44,55 @@ export function isTagLine(line) {
   return /^\s*#[^\s#]/.test(line);
 }
 
-/** Hängt Tags (ohne '#') an die Tag-Zeile in Zeile 1 an bzw. setzt eine neue Tag-Zeile davor. */
+/**
+ * Teilt Text in YAML-Frontmatter und Rest: { bom, front, body }. `front` enthält beide '---'-Zeilen
+ * samt Zeilenumbruch und ist '' ohne Frontmatter. bom + front + body === text.
+ */
+export function splitFrontmatter(text) {
+  const bom = text.startsWith('\ufeff') ? '\ufeff' : '';
+  const rest = bom ? text.slice(1) : text;
+  const m = rest.match(/^---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/);
+  return m ? { bom, front: m[0], body: rest.slice(m[0].length) } : { bom, front: '', body: rest };
+}
+
+/** Einfache `schlüssel: wert`-Paare der obersten Ebene aus der Frontmatter (Werte als Text). */
+export function parseFrontmatter(text) {
+  const { front } = splitFrontmatter(text);
+  const out = {};
+  for (const line of front.split(/\r?\n/).slice(1, -2)) {
+    const m = line.match(/^([\w-]+):[ \t]*(.*?)[ \t]*$/);
+    if (m) out[m[1]] = m[2].replace(/^(["'])(.*)\1$/, '$2');
+  }
+  return out;
+}
+
+/**
+ * Setzt Felder der obersten Ebene in der Frontmatter (`null` entfernt ein Feld). Legt die Frontmatter
+ * bei Bedarf an und entfernt sie wieder, wenn sie dadurch leer wird. Der Rest der Datei bleibt unverändert.
+ */
+export function setFrontmatterFields(text, fields) {
+  const { bom, front, body } = splitFrontmatter(text);
+  const nl = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = front ? front.replace(/\r?\n$/, '').split(/\r?\n/).slice(1, -1) : [];
+  for (const [key, value] of Object.entries(fields)) {
+    const i = lines.findIndex((l) => l.startsWith(key + ':'));
+    if (value == null) { if (i >= 0) lines.splice(i, 1); continue; }
+    const line = `${key}: ${value}`;
+    if (i >= 0) lines[i] = line; else lines.push(line);
+  }
+  if (!lines.length) return bom + body;
+  return bom + ['---', ...lines, '---'].join(nl) + nl + body;
+}
+
+/** Hängt Tags (ohne '#') an die Tag-Zeile an (erste Zeile nach einer evtl. Frontmatter) bzw. setzt eine neue Tag-Zeile davor. */
 export function addTagsToText(text, tags) {
   const present = new Set(parseTags(text).map((t) => t.toLowerCase()));
   const add = tags.filter((t) => !present.has(t.toLowerCase()));
   if (!add.length) return text;
   const str = add.map((t) => '#' + t).join(' ');
-  const bom = text.startsWith('﻿') ? '﻿' : '';
-  const body = bom ? text.slice(1) : text;
-  const nl = body.includes('\r\n') ? '\r\n' : '\n';
+  const { bom: fmBom, front, body } = splitFrontmatter(text);
+  const bom = fmBom + front;
+  const nl = text.includes('\r\n') ? '\r\n' : '\n';
   const end = body.indexOf('\n');
   const first = end < 0 ? body : body.slice(0, end).replace(/\r$/, '');
   if (isTagLine(first)) {
@@ -112,6 +152,7 @@ const persist = (puts, dels = []) => tx('notes', 'readwrite', (s) => {
 
 const listeners = { change: new Set(), status: new Set() };
 const handles = new Map(); // path -> FileSystemFileHandle
+const attachments = { index: null, at: 0, loading: null }; // Dateiname (klein) -> [Pfade], für Bilder
 let syncRun = 0;
 
 export const core = {
@@ -173,6 +214,7 @@ export const core = {
       this.syncing = false;
       this.notes.clear();
       handles.clear();
+      attachments.index = null;
       await tx('notes', 'readwrite', (s) => s.clear());
       this.syncMeta = null;
       await this.kv.del(SYNC_META_KEY);
@@ -411,7 +453,60 @@ export const core = {
     this.forget(path);
   },
 
+  /* ----- Anhänge (z. B. Bilder) ----- */
+
+  /**
+   * Löst einen Link auf einen Anhang auf wie Obsidian: Pfad relativ zur Notiz, ab Vault-Wurzel,
+   * sonst irgendwo im Vault per Dateiname (kürzester Pfad). Gibt den Pfad oder null zurück.
+   */
+  async resolveAttachment(link, fromPath) {
+    const clean = link.split(/[#|]/)[0].trim().replace(/^\/+/, '');
+    if (!clean) return null;
+    const dir = fromPath.includes('/') ? fromPath.slice(0, fromPath.lastIndexOf('/')) : '';
+    const tries = [];
+    if (dir) tries.push(normalizePath(dir + '/' + clean));
+    tries.push(normalizePath(clean));
+    for (const p of tries) {
+      if (!p) continue;
+      try { await this.fileHandle(p); return p; } catch { /* weiter */ }
+    }
+    const name = clean.split('/').at(-1).toLowerCase();
+    const find = () => [...(attachments.index?.get(name) || [])].sort((a, b) => a.length - b.length)[0] || null;
+    if (!attachments.index || (!find() && Date.now() - attachments.at > 60 * 1000)) {
+      attachments.loading ??= listFiles(this.vault, '', [], true).then((files) => {
+        const index = new Map();
+        for (const f of files) {
+          const k = f.name.toLowerCase();
+          if (!index.has(k)) index.set(k, []);
+          index.get(k).push(f.path);
+          if (!f.path.toLowerCase().endsWith('.md')) handles.set(f.path, f.handle);
+        }
+        attachments.index = index;
+        attachments.at = Date.now();
+      }).finally(() => { attachments.loading = null; });
+      await attachments.loading;
+    }
+    return find();
+  },
+
+  /** Object-URL für eine Datei im Vault (z. B. Bild). Mit URL.revokeObjectURL wieder freigeben. */
+  async fileUrl(path) {
+    const file = await (await this.fileHandle(path)).getFile();
+    return URL.createObjectURL(file);
+  },
+
   /* ----- intern ----- */
+
+  /** Handle für beliebige Dateien (nicht nur Notizen), ohne den Notiz-Zwischenspeicher anzufassen. */
+  async fileHandle(path) {
+    if (handles.has(path)) return handles.get(path);
+    const parts = path.split('/');
+    let dir = this.vault;
+    for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p);
+    const h = await dir.getFileHandle(parts.at(-1));
+    handles.set(path, h);
+    return h;
+  },
 
   async requireAccess() {
     if (!(await this.hasPermission(true))) {
@@ -453,19 +548,29 @@ export const core = {
   },
 };
 
+/** Löst './' und '../' auf; null, wenn der Pfad aus dem Vault herausführt. */
+function normalizePath(path) {
+  const out = [];
+  for (const p of path.split('/')) {
+    if (!p || p === '.') continue;
+    if (p === '..') { if (!out.length) return null; out.pop(); } else out.push(p);
+  }
+  return out.join('/') || null;
+}
+
 async function write(handle, text) {
   const w = await handle.createWritable();
   await w.write(text);
   await w.close();
 }
 
-async function listFiles(dir, prefix, out) {
+async function listFiles(dir, prefix, out, all = false) {
   const subdirs = [];
   for await (const [name, handle] of dir.entries()) {
     const path = prefix ? `${prefix}/${name}` : name;
     if (handle.kind === 'directory') {
-      if (!HIDDEN_DIRS.has(name)) subdirs.push(listFiles(handle, path, out));
-    } else if (name.toLowerCase().endsWith('.md')) {
+      if (!HIDDEN_DIRS.has(name)) subdirs.push(listFiles(handle, path, out, all));
+    } else if (all || name.toLowerCase().endsWith('.md')) {
       out.push({ path, name, handle });
     }
   }
