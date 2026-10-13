@@ -28,17 +28,14 @@ let loaded = false;
 
 /* ---------- Zustand ---------- */
 
-let saveTimer;
+// Sofort speichern (nicht verzögert), damit beim Schließen der App kein Tipp verloren geht.
 function saveState() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    core.kv.set(STATE_KEY, {
-      filter: state.filter,
-      untaggedOnly: state.untaggedOnly,
-      pending: [...state.pending],
-      sessionTags: state.sessionTags,
-    }).catch(() => {});
-  }, 150);
+  core.kv.set(STATE_KEY, {
+    filter: state.filter,
+    untaggedOnly: state.untaggedOnly,
+    pending: [...state.pending],
+    sessionTags: state.sessionTags,
+  }).catch(() => {});
 }
 
 async function loadState() {

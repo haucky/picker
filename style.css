@@ -201,6 +201,20 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .hint.left { text-align: left; }
 .notice ul { margin: 6px 0 0; padding-left: 18px; overflow-wrap: anywhere; }
 
+/* Sync */
+.kv { display: flex; flex-direction: column; margin: 12px 0; }
+.kv-row { display: flex; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.kv-label { color: var(--muted); flex: 0 0 42%; }
+.kv-row > span:last-child { min-width: 0; overflow-wrap: anywhere; }
+.btn-row { display: flex; gap: 10px; }
+.btn-row .btn { flex: 1; }
+.section { font-size: 1rem; margin: 20px 0 4px; }
+.log { list-style: none; margin: 0; padding: 0; font-size: .8rem; }
+.log li { display: flex; flex-wrap: wrap; gap: 2px 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.log-time { color: var(--muted); }
+.log-op { color: var(--accent); }
+.log-path { flex-basis: 100%; overflow-wrap: anywhere; }
+
 /* Editor */
 .bar {
   position: sticky; top: 0; z-index: 2;

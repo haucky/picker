@@ -13,7 +13,7 @@ Minimale PWA, um auf dem Android-Handy einen lokalen Obsidian-Vault schnell zu d
 ## Benutzung
 
 - **Vault öffnen** tippen und im Ordner-Dialog **nur den Vault-Ordner** auswählen (den Ordner, der `.obsidian/` enthält) – nicht „Interner Speicher“, „Documents“ o. Ä. Die App bekommt Lese- *und Schreib*zugriff auf genau diesen Ordner samt Unterordnern; gib ihr nicht mehr als nötig.
-Unten wechselst du zwischen den Modulen **Suche** und **Taggen**.
+Unten wechselst du zwischen den Modulen **Suche**, **Taggen** und **Sync**.
 
 ### Suche
 
@@ -36,8 +36,32 @@ Damit die Suche schnell ist, hält die App eine Kopie aller Notizen im Browser-S
 
 - Beim **ersten** Öffnen eines Vaults wird alles einmal eingelesen; das dauert je nach Größe etwas.
 - Bei jedem weiteren Start ist die Suche sofort da. Im Hintergrund prüft die App, was sich geändert hat, und liest nur neue/geänderte Dateien neu ein (Status unten: „aktualisiere …“).
+- Mit dem Obsidian-Plugin (siehe unten) prüft die App dabei nur die Dateien, die das Plugin als geändert gemeldet hat. Ohne Plugin wird jede Datei geprüft, was bei einigen tausend Notizen dauert.
 - Fragt Chrome nach einem Neustart erneut nach der Berechtigung, ist die Suche trotzdem nutzbar; beim Antippen eines Treffers (oder über „Zugriff erlauben“) wird der Zugriff erneut erteilt.
 - Werden die Website-Daten in Chrome gelöscht, baut die App den Zwischenspeicher einfach neu auf.
+
+### Sync
+
+- Zeigt, wann und wie zuletzt abgeglichen wurde, mit **Jetzt abgleichen** und **Komplett abgleichen**.
+- Darunter die letzten Einträge des Plugin-Logs (zur Kontrolle, ob das Plugin läuft).
+
+## Obsidian-Plugin „Picker Changelog“
+
+Das Plugin in `obsidian-plugin/picker-changelog/` schreibt jede Änderung an Notizen (neu, geändert, gelöscht, umbenannt) als Zeile nach `.picker/changes.log` im Vault. Die PWA liest beim Start nur dieses Log und prüft genau die genannten Dateien. Das Plugin ist nur auf Mobilgeräten aktiv; auf dem Desktop tut es nichts.
+
+**Installation (mit Obsidian Sync inkl. Plugin-Sync):**
+
+1. Auf dem Desktop den Ordner `picker-changelog` (mit `manifest.json` und `main.js`) nach `<Vault>/.obsidian/plugins/` kopieren.
+2. Warten, bis Obsidian Sync ihn aufs Handy übertragen hat.
+3. Auf dem Handy: **Einstellungen → Community-Plugins** → ggf. den eingeschränkten Modus ausschalten → „Picker Changelog“ aktivieren.
+4. Kontrolle: Im Tab **Sync** der PWA erscheint unter „Plugin-Log“ ein Eintrag „Obsidian gestartet“.
+
+**Verhalten:**
+
+- Änderungen werden gesammelt und spätestens alle 5 Sekunden geschrieben (sowie sofort, wenn Obsidian in den Hintergrund geht). Einträge älter als 30 Tage werden entfernt.
+- Änderungen von anderen Geräten (Obsidian Sync) landen im Log, sobald Obsidian auf dem Handy sie empfängt.
+- Ein vollständiger Abgleich findet weiterhin statt: beim ersten Mal, wenn das Log fehlt oder nicht weit genug zurückreicht, spätestens alle 3 Tage und per Button. Damit werden auch Änderungen gefunden, die am Plugin vorbei passiert sind.
+- Eigene Änderungen der PWA (z. B. Tags) kennt die PWA ohnehin; erkennt Obsidian sie später, steht ein `modify` im Log, das die PWA nur kurz prüft.
 
 ## Unterstützte Browser
 
@@ -56,6 +80,7 @@ In nicht unterstützten Browsern zeigt die App einen entsprechenden Hinweis.
 
 - `core.js` – Datenschicht: Vault-Zugriff, Zwischenspeicher (IndexedDB), Abgleich, CRUD (`read`, `create`, `update`, `remove`), Auslesen von Tags/Datum, Events (`change`, `status`).
 - `app.js` – Rahmen: Startseite, Tab-Leiste, gemeinsamer Editor.
+- `obsidian-plugin/picker-changelog/` – Obsidian-Plugin, das Änderungen protokolliert (wird nicht von der PWA geladen).
 - `features/*.js` – Feature-Module `{ id, title, mount(root, ui), show() }`, in `app.js` unter `FEATURES` registriert. Module greifen nur über den Core auf Dateien zu.
 
 ## Deployment

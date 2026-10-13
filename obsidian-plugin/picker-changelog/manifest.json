@@ -1,0 +1,9 @@
+{
+  "id": "picker-changelog",
+  "name": "Picker Changelog",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Protokolliert Änderungen an Notizen in .picker/changes.log, damit die Vault-Picker-PWA nur geänderte Dateien neu einlesen muss. Aktiv nur auf Mobilgeräten.",
+  "author": "haucky",
+  "isDesktopOnly": false
+}

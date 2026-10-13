@@ -1,12 +1,22 @@
 // Core: Vault-Zugriff, Zwischenspeicher, Abgleich und CRUD für Notizen.
 // Feature-Module greifen nur über dieses Modul auf Dateien zu.
 
-const HIDDEN_DIRS = new Set(['.obsidian', '.trash', '.git']);
+const HIDDEN_DIRS = new Set(['.obsidian', '.trash', '.git', '.picker']);
 const READ_CONCURRENCY = 16;
+const CHANGE_LOG_DIR = '.picker';
+const CHANGE_LOG_FILE = 'changes.log';
+const LOG_OVERLAP = 60 * 1000;                     // Plugin schreibt gebündelt; Einträge können etwas später ankommen
+const FULL_SYNC_EVERY = 3 * 24 * 60 * 60 * 1000;   // spätestens alle 3 Tage vollständig abgleichen
+const SYNC_META_KEY = 'syncMeta';
 const TAG_RE = /(?:^|[\s(,])#([\p{L}\p{N}_\-/]*[\p{L}_\-][\p{L}\p{N}_\-/]*)/gu;
 const DATE_TAG_RE = /^date\/(\d{4})[/-](\d{1,2})(?:[/-](\d{1,2}))?$/;
 
 /* ---------- Parsing ---------- */
+
+/** .md-Datei außerhalb ausgeblendeter Ordner? */
+export function isNotePath(path) {
+  return path.toLowerCase().endsWith('.md') && !path.split('/').slice(0, -1).some((d) => HIDDEN_DIRS.has(d));
+}
 
 /** Alle Tags einer Notiz ohne führendes '#', in Originalschreibweise, ohne Duplikate. */
 export function parseTags(text) {
@@ -138,7 +148,10 @@ export const core = {
   async init() {
     try {
       this.vault = (await tx('handles', 'readonly', (s) => s.get('vault'))) || null;
-      if (this.vault) for (const n of await tx('notes', 'readonly', (s) => s.getAll())) this.notes.set(n.path, makeNote(n));
+      if (this.vault) {
+        for (const n of await tx('notes', 'readonly', (s) => s.getAll())) this.notes.set(n.path, makeNote(n));
+        this.syncMeta = (await this.kv.get(SYNC_META_KEY)) || null;
+      }
     } catch { /* IndexedDB nicht verfügbar */ }
     return !!this.vault;
   },
@@ -161,6 +174,8 @@ export const core = {
       this.notes.clear();
       handles.clear();
       await tx('notes', 'readwrite', (s) => s.clear());
+      this.syncMeta = null;
+      await this.kv.del(SYNC_META_KEY);
       this.emit('change', { reset: true });
     }
     this.sync();
@@ -179,8 +194,15 @@ export const core = {
     return ok;
   },
 
-  /** Abgleich im Hintergrund: liest nur neue/geänderte Dateien, entfernt gelöschte. */
-  async sync() {
+  /** Stand des letzten Abgleichs: { lastSync, lastFull, mode: 'log'|'full', changed, duration } */
+  syncMeta: null,
+
+  /**
+   * Abgleich im Hintergrund. Normalerweise über das Änderungsprotokoll des Obsidian-Plugins
+   * (nur dort genannte Dateien werden geprüft); vollständig, wenn das Log fehlt, nicht weit genug
+   * zurückreicht, der letzte vollständige Abgleich zu alt ist oder `full` gesetzt ist.
+   */
+  async sync({ full = false } = {}) {
     if (!this.vault || this.syncing) return;
     if ((await this.vault.queryPermission({ mode: 'readwrite' })) !== 'granted') {
       this.needsPermission = true;
@@ -191,52 +213,28 @@ export const core = {
     this.needsPermission = false;
     const run = ++syncRun;
     this.syncing = true;
-    const first = this.notes.size === 0;
-    this.setStatus(first ? 'Lese Dateiliste …' : `${this.countLabel()} · aktualisiere …`);
+    const started = Date.now();
+    const meta = { ...(this.syncMeta || (await this.kv.get(SYNC_META_KEY).catch(() => null)) || {}) };
+    this.setStatus(this.notes.size ? `${this.countLabel()} · aktualisiere …` : 'Lese Dateiliste …');
 
     try {
-      const found = await listFiles(this.vault, '', []);
-      if (run !== syncRun) return;
-      const seen = new Set();
-      let pending = [];
-      const changed = [];
-      let done = 0;
-      let next = 0;
-
-      const flush = async () => {
-        if (!pending.length) return;
-        const batch = pending;
-        pending = [];
-        await persist(batch);
-        this.emit('change', { paths: batch.map((n) => n.path) });
-      };
-      const worker = async () => {
-        while (next < found.length && run === syncRun) {
-          const f = found[next++];
-          seen.add(f.path);
-          handles.set(f.path, f.handle);
-          const file = await f.handle.getFile();
-          const old = this.notes.get(f.path);
-          if (!old || old.size !== file.size || old.mtime !== file.lastModified) {
-            const n = makeNote({ path: f.path, size: file.size, mtime: file.lastModified, text: await file.text() });
-            this.notes.set(n.path, n);
-            pending.push(n);
-            changed.push(n.path);
-            if (pending.length >= 200) await flush();
-          }
-          if (first && ++done % 100 === 0) this.setStatus(`Indexiere ${done} / ${found.length} …`);
+      let mode = 'full';
+      let changed = 0;
+      if (!full && this.notes.size && meta.lastSync && meta.lastFull && started - meta.lastFull < FULL_SYNC_EVERY) {
+        const log = await this.readChangeLog().catch(() => null);
+        // Das Log muss vor dem letzten Abgleich beginnen, sonst könnten Änderungen fehlen.
+        if (log && log.length && log[0].t <= meta.lastSync) {
+          mode = 'log';
+          changed = await this.applyLog(log, meta.lastSync - LOG_OVERLAP, run);
         }
-      };
-      await Promise.all(Array.from({ length: READ_CONCURRENCY }, worker));
-      if (run !== syncRun) return;
-      await flush();
-
-      const gone = [...this.notes.keys()].filter((p) => !seen.has(p));
-      for (const p of gone) { this.notes.delete(p); handles.delete(p); }
-      if (gone.length) {
-        await persist([], gone);
-        this.emit('change', { paths: gone, removed: true });
       }
+      if (mode === 'full') changed = await this.fullScan(run);
+      if (run !== syncRun) return;
+
+      Object.assign(meta, { lastSync: started, mode, changed, duration: Date.now() - started });
+      if (mode === 'full') meta.lastFull = started;
+      this.syncMeta = meta;
+      await this.kv.set(SYNC_META_KEY, meta).catch(() => {});
       this.syncing = false;
       this.setStatus(this.countLabel());
     } catch (err) {
@@ -249,6 +247,104 @@ export const core = {
         this.setStatus(`${this.countLabel()} · Fehler beim Aktualisieren: ${err.message}`);
       }
     }
+  },
+
+  /** Vollständiger Abgleich: prüft jede Datei (Größe/Änderungsdatum). Gibt die Zahl geänderter Dateien zurück. */
+  async fullScan(run) {
+    const first = this.notes.size === 0;
+    const found = await listFiles(this.vault, '', []);
+    if (run !== syncRun) return 0;
+    const seen = new Set();
+    let pending = [];
+    let changed = 0;
+    let done = 0;
+    let next = 0;
+
+    const flush = async () => {
+      if (!pending.length) return;
+      const batch = pending;
+      pending = [];
+      await persist(batch);
+      this.emit('change', { paths: batch.map((n) => n.path) });
+    };
+    const worker = async () => {
+      while (next < found.length && run === syncRun) {
+        const f = found[next++];
+        seen.add(f.path);
+        handles.set(f.path, f.handle);
+        const file = await f.handle.getFile();
+        const old = this.notes.get(f.path);
+        if (!old || old.size !== file.size || old.mtime !== file.lastModified) {
+          const n = makeNote({ path: f.path, size: file.size, mtime: file.lastModified, text: await file.text() });
+          this.notes.set(n.path, n);
+          pending.push(n);
+          changed++;
+          if (pending.length >= 200) await flush();
+        }
+        if (++done % 100 === 0) {
+          this.setStatus(first ? `Indexiere ${done} / ${found.length} …` : `${this.countLabel()} · prüfe ${done} / ${found.length} …`);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: READ_CONCURRENCY }, worker));
+    if (run !== syncRun) return changed;
+    await flush();
+
+    const gone = [...this.notes.keys()].filter((p) => !seen.has(p));
+    for (const p of gone) { this.notes.delete(p); handles.delete(p); }
+    if (gone.length) {
+      await persist([], gone);
+      this.emit('change', { paths: gone, removed: true });
+    }
+    return changed + gone.length;
+  },
+
+  /** Prüft nur die Dateien, die seit `since` im Änderungsprotokoll stehen. */
+  async applyLog(log, since, run) {
+    const touched = new Set();
+    for (const e of log) {
+      if (e.t < since) continue;
+      for (const p of [e.path, e.oldPath]) if (p && isNotePath(p)) touched.add(p);
+    }
+    let changed = 0;
+    for (const path of touched) {
+      if (run !== syncRun) break;
+      const had = this.notes.has(path);
+      try {
+        const file = await (await this.handle(path)).getFile();
+        const old = this.notes.get(path);
+        if (!old || old.size !== file.size || old.mtime !== file.lastModified) {
+          this.remember(path, file, await file.text());
+          changed++;
+        }
+      } catch (err) {
+        if (err.name !== 'NotFoundError' && err.name !== 'TypeMismatchError') throw err;
+        this.forget(path);
+        if (had) changed++;
+      }
+    }
+    return changed;
+  },
+
+  /** Einträge aus .picker/changes.log (vom Obsidian-Plugin), aufsteigend nach Zeit. null, wenn es kein Log gibt. */
+  async readChangeLog() {
+    let text;
+    try {
+      const dir = await this.vault.getDirectoryHandle(CHANGE_LOG_DIR);
+      text = await (await (await dir.getFileHandle(CHANGE_LOG_FILE)).getFile()).text();
+    } catch (err) {
+      if (err.name === 'NotFoundError') return null;
+      throw err;
+    }
+    const out = [];
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const e = JSON.parse(line);
+        if (typeof e.t === 'number') out.push(e);
+      } catch { /* unvollständige Zeile, z. B. während Obsidian gerade schreibt */ }
+    }
+    return out.sort((a, b) => a.t - b.t);
   },
 
   /* ----- CRUD ----- */
