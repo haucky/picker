@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Vault Picker</title>
-  <meta name="description" content="Obsidian-Vault schnell durchsuchen und Notizen bearbeiten.">
+  <meta name="description" content="Obsidian-Vault schnell durchsuchen und TILs taggen.">
   <meta name="theme-color" content="#000000">
   <meta name="color-scheme" content="dark">
   <link rel="manifest" href="manifest.webmanifest">
@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Start: Vault wählen / Berechtigung -->
+  <!-- Start: Vault wählen -->
   <section id="view-start" class="view center" hidden>
     <div id="unsupported" class="notice" hidden>
       <strong>Dieser Browser wird nicht unterstützt.</strong>
@@ -27,21 +27,13 @@
     </div>
   </section>
 
-  <!-- Suche -->
-  <section id="view-search" class="view" hidden>
-    <div class="search">
-      <input id="q" type="search" autocomplete="off" autocapitalize="off" spellcheck="false"
-             enterkeyhint="search" placeholder="Suchen …" aria-label="Suchen">
-    </div>
-    <ol id="hits" class="hits"></ol>
-    <footer class="status">
-      <span id="status"></span>
-      <button id="btn-permission" class="link" type="button" hidden>Zugriff erlauben</button>
-      <button id="btn-switch" class="link" type="button">Vault wechseln</button>
-    </footer>
-  </section>
+  <!-- Feature-Module als Tabs -->
+  <main id="app" hidden>
+    <div id="panels"></div>
+    <nav id="tabs" class="tabs" aria-label="Module"></nav>
+  </main>
 
-  <!-- Notiz -->
+  <!-- Notiz-Editor (gemeinsam für alle Module) -->
   <section id="view-editor" class="view" hidden>
     <header class="bar">
       <button id="btn-back" class="icon-btn" type="button" aria-label="Zurück">←</button>
@@ -54,6 +46,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
