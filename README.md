@@ -41,4 +41,4 @@ In nicht unterstützten Browsern zeigt die App einen entsprechenden Hinweis.
 
 ## Deployment
 
-`.github/workflows/pages.yml` deployt bei jedem Push auf `main` die Repo-Root nach GitHub Pages (Voraussetzung: **Settings → Pages → Source: GitHub Actions**). Bei Änderungen an der App-Shell die `CACHE`-Version in `service-worker.js` erhöhen.
+GitHub Pages veröffentlicht direkt aus dem Branch `ccr-24a76550-4wcodz`, Ordner `/ (root)` (**Settings → Pages → Source: Deploy from a branch**). Jeder Push auf diesen Branch geht automatisch live. `.nojekyll` sorgt dafür, dass die Dateien unverändert ausgeliefert werden. Bei Änderungen an der App-Shell die `CACHE`-Version in `service-worker.js` erhöhen.
