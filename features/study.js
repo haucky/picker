@@ -213,6 +213,8 @@ function renderEditor(text) {
     onChange: onInput,
     decorate: studyMarks,
     openLink: (target) => ui.openLink(target),
+    saveImage: ui.saveImage,
+    spell: ui.spell,
     // Bilder relativ zum Ordner der TILs dieser VL auflösen
     resolveImage: (link) => ui.resolveImage(link, ed.folder ? ed.folder + '/_.md' : '_.md'),
   });

@@ -108,6 +108,10 @@ Notizen ohne diese Felder sind „neu“; die Felder werden beim ersten Bewerten
 
 Notiz-Editor (Suche → Notiz) und VL-Editor (Study) sind derselbe Markdown-Editor ([CodeMirror 6](https://codemirror.net/)) mit Live-Vorschau wie in Obsidian: Markdown wird gerendert, nur wo der Cursor steht, erscheint der Quelltext (fett/kursiv/Code/Links pro Element, Überschriften, Listen und Zitate pro Zeile). Gerendert werden Überschriften, **fett**, *kursiv*, ~~durchgestrichen~~, `Code`, Codeblöcke, Listen (•), Checkboxen (antippen schaltet um), Zitate, Trennlinien, `[[Links]]` (antippen öffnet die Notiz), Bilder (`![[bild.png]]`, `![](pfad)`) und `#Tags`. Tabellen und Formeln bleiben Text, die Frontmatter wird gedämpft angezeigt. Enter in einer Liste setzt sie fort (leerer Punkt beendet sie), Tab/Shift-Tab rückt ein/aus.
 
+**Bilder einfügen:** Ein Bild aus der Zwischenablage (Screenshot, kopiertes Bild) oder per Ziehen landet als `images/Pasted image JJJJMMTTHHMMSS.png` im Vault (Ordner wird angelegt), an der Cursor-Stelle wird `![[Pasted image ….png]]` eingefügt – bzw. ein Markdown-Link, wenn in Obsidian „Wikilinks verwenden“ aus ist. Das Bild wird sofort gespeichert, auch wenn die Notiz danach nicht gespeichert wird.
+
+**Korrekturvorschläge (nur am Computer):** Steht der Cursor in einem Wort, das weder in den Wortlisten (Deutsch, Englisch, je ~50.000 häufigste Wörter) noch mindestens zweimal im eigenen Vault vorkommt, erscheinen darunter bis zu 4 Vorschläge – kleinster Tippabstand zuerst, dann das häufigste Wort. Klick oder Alt+1…4 ersetzt das Wort. Fachbegriffe, die man öfter in Notizen verwendet, gelten damit automatisch als bekannt. Die rote Unterkringelung kommt weiter vom Browser.
+
 CodeMirror liegt fertig gebündelt in `vendor/codemirror.js` (die App braucht weiterhin kein npm). Neu bauen bzw. aktualisieren: Versionen in `vendor/codemirror/package.json` anpassen, dann `vendor/codemirror/build.sh`.
 
 ### Darstellung

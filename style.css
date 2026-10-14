@@ -405,3 +405,11 @@ body.study-editing .panel { padding-bottom: calc(16px + env(safe-area-inset-bott
   z-index: 10;
 }
 .md-editor .cm-frontmatter { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .85em; color: var(--muted); }
+
+/* Korrekturvorschläge (Desktop) */
+.cm-tooltip.cm-tooltip { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); }
+.cm-suggest { display: flex; gap: 2px; padding: 3px; font: 14px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.cm-suggest button { border: 0; background: transparent; color: var(--text); padding: 4px 8px; border-radius: 6px; }
+.cm-suggest button:first-child { color: var(--accent); font-weight: 600; }
+.cm-suggest button:hover { background: var(--bg); }
+.cm-suggest-none { color: var(--muted); padding: 4px 8px; }

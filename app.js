@@ -7,6 +7,7 @@ import review from './features/review.js';
 import syncTab from './features/sync.js';
 import { applyTheme } from './features/theme.js';
 import { createEditor } from './features/editor.js';
+import { createSpell } from './features/spell.js';
 
 // Neue Feature-Module hier eintragen: { id, title, mount(root, ui), show?() }
 const FEATURES = [search, tagging, study, review, syncTab];
@@ -95,7 +96,43 @@ async function resolveImage(link, fromPath) {
   return p ? core.fileUrl(p) : null;
 }
 
-const ui = { core, toast, openNote, openLink, resolveImage, pickVault };
+/* ---------- Bilder einfügen ---------- */
+
+const IMAGE_DIR = 'images';
+const IMAGE_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg', 'image/bmp': 'bmp', 'image/avif': 'avif' };
+let markdownLinks = null; // Obsidian-Einstellung „Wikilinks verwenden“ aus .obsidian/app.json
+
+async function useMarkdownLinks() {
+  if (markdownLinks == null) {
+    try {
+      const dir = await core.vault.getDirectoryHandle('.obsidian');
+      const cfg = JSON.parse(await (await (await dir.getFileHandle('app.json')).getFile()).text());
+      markdownLinks = cfg.useMarkdownLinks === true;
+    } catch {
+      markdownLinks = false;
+    }
+  }
+  return markdownLinks;
+}
+
+/** Speichert ein eingefügtes Bild wie Obsidian als images/Pasted image JJJJMMTTHHMMSS.png und gibt den Link zurück. */
+async function saveImage(file) {
+  const ext = IMAGE_EXT[file.type] || (/\.(\w+)$/.exec(file.name || '')?.[1] ?? 'png');
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  let name = `Pasted image ${stamp}.${ext}`;
+  for (let i = 1; await core.exists(`${IMAGE_DIR}/${name}`); i++) name = `Pasted image ${stamp} ${i}.${ext}`;
+  await core.createFile(`${IMAGE_DIR}/${name}`, file);
+  return (await useMarkdownLinks()) ? `![](${IMAGE_DIR}/${encodeURI(name)})` : `![[${name}]]`;
+}
+
+/* ---------- Korrekturvorschläge (nur Desktop: feiner Zeiger) ---------- */
+
+const spell = matchMedia('(hover: hover) and (pointer: fine)').matches ? createSpell({ notes: () => core.list() }) : null;
+if (spell) core.on('change', () => spell.invalidate());
+
+const ui = { core, toast, openNote, openLink, resolveImage, saveImage, spell, pickVault };
 
 /* ---------- Editor ---------- */
 
@@ -189,6 +226,8 @@ async function init() {
     onChange: () => { el.btnSave.disabled = !isDirty(); },
     openLink,
     resolveImage: (link) => resolveImage(link, current ? current.path : ''),
+    saveImage,
+    spell,
   });
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's' && current) { e.preventDefault(); save(); }

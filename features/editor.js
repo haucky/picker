@@ -3,6 +3,7 @@
 // Listen und Zitate pro Zeile). Ohne Fokus ist alles gerendert.
 import {
   EditorState, EditorView, ViewPlugin, Decoration, WidgetType, keymap, placeholder as cmPlaceholder, Prec,
+  StateField, StateEffect, showTooltip,
   history, defaultKeymap, historyKeymap, indentMore, indentLess,
   Language, defineLanguageFacet, LanguageSupport, syntaxTree, markdownParser, GFM,
 } from '../vendor/codemirror.js';
@@ -257,6 +258,114 @@ function extraMarks(decorate) {
   }, { decorations: (v) => v.decorations });
 }
 
+/* ---------- Korrekturvorschläge (Desktop) ---------- */
+
+const setSuggest = StateEffect.define();
+const suggestField = StateField.define({
+  create: () => null,
+  update(v, tr) {
+    for (const e of tr.effects) if (e.is(setSuggest)) return e.value;
+    return tr.docChanged || tr.selection ? null : v;
+  },
+  provide: (f) => showTooltip.from(f, (v) => v && {
+    pos: v.from,
+    above: false,
+    create(view) {
+      const dom = document.createElement('div');
+      dom.className = 'cm-suggest';
+      v.suggestions.forEach((s, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = s;
+        b.title = `Alt+${i + 1}`;
+        b.addEventListener('mousedown', (e) => { e.preventDefault(); applySuggestion(view, i); });
+        dom.append(b);
+      });
+      if (!v.suggestions.length) dom.append(Object.assign(document.createElement('span'), { className: 'cm-suggest-none', textContent: 'keine Vorschläge' }));
+      return { dom };
+    },
+  }),
+});
+
+function applySuggestion(view, i) {
+  const v = view.state.field(suggestField, false);
+  if (!v || !v.suggestions[i]) return false;
+  view.dispatch({ changes: { from: v.from, to: v.to, insert: v.suggestions[i] }, selection: { anchor: v.from + v.suggestions[i].length }, userEvent: 'input' });
+  return true;
+}
+
+const SKIP_NODES = new Set([...CODE_NODES, 'URL', 'LinkLabel', 'HTMLTag', 'Comment']);
+
+/** Zeigt für das Wort am Cursor Vorschläge, wenn `spell` es nicht kennt (kurz nach dem letzten Tastendruck). */
+function spellSuggest(spell) {
+  const plugin = ViewPlugin.fromClass(class {
+    constructor(view) { this.view = view; this.timer = 0; spell.ready().then(() => this.schedule()); }
+    update(u) { if (u.docChanged || u.selectionSet || u.focusChanged) this.schedule(); }
+    schedule() {
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.check(), 250);
+    }
+    check() {
+      const { view } = this;
+      const { state } = view;
+      const r = state.selection.main;
+      if (!view.hasFocus || !r.empty) return;
+      const range = state.wordAt(r.head);
+      if (!range) return;
+      const word = state.sliceDoc(range.from, range.to);
+      if (!/^\p{L}+$/u.test(word) || spell.isKnown(word)) return;
+      if (state.sliceDoc(range.from - 1, range.from) === '#') return; // Tag
+      for (let n = syntaxTree(state).resolveInner(r.head, -1); n; n = n.parent) if (SKIP_NODES.has(n.name)) return;
+      const line = state.doc.lineAt(r.head);
+      if (/\[\[[^\]]*$/.test(state.sliceDoc(line.from, range.from))) return; // in [[Link]]
+      view.dispatch({ effects: setSuggest.of({ from: range.from, to: range.to, suggestions: spell.suggest(word) }) });
+    }
+    destroy() { clearTimeout(this.timer); }
+  });
+  return [
+    suggestField,
+    plugin,
+    keymap.of([1, 2, 3, 4].map((n) => ({ key: `Alt-${n}`, run: (view) => applySuggestion(view, n - 1) }))),
+  ];
+}
+
+/* ---------- Bilder einfügen (Zwischenablage, Ziehen) ---------- */
+
+function imagePaste(saveImage) {
+  const insert = async (view, files) => {
+    for (const file of files) {
+      try {
+        const md = await saveImage(file);
+        const { from, to } = view.state.selection.main;
+        const line = view.state.doc.lineAt(from);
+        const before = from > line.from ? '\n' : '';
+        view.dispatch({ changes: { from, to, insert: before + md + '\n' }, selection: { anchor: from + before.length + md.length + 1 }, userEvent: 'input' });
+      } catch (err) {
+        alert('Bild konnte nicht gespeichert werden: ' + err.message);
+      }
+    }
+  };
+  const images = (list) => [...(list || [])].filter((f) => f.type.startsWith('image/'));
+  return EditorView.domEventHandlers({
+    paste(e, view) {
+      const files = images(e.clipboardData?.files);
+      if (!files.length) return false;
+      e.preventDefault();
+      insert(view, files);
+      return true;
+    },
+    drop(e, view) {
+      const files = images(e.dataTransfer?.files);
+      if (!files.length) return false;
+      e.preventDefault();
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      if (pos != null) view.dispatch({ selection: { anchor: pos } });
+      insert(view, files);
+      return true;
+    },
+  });
+}
+
 /* ---------- Listen fortsetzen ---------- */
 
 /** Enter in einem Listenpunkt: nächster Punkt (Nummer +1, neue Checkbox); im leeren Punkt: Liste beenden. */
@@ -281,7 +390,8 @@ function continueList(view) {
 /* ---------- Editor ---------- */
 
 /**
- * opts: { parent, doc, onChange(text), placeholder, decorate(text), openLink(target), resolveImage(link) → Promise<URL> }
+ * opts: { parent, doc, onChange(text), placeholder, decorate(text), openLink(target), resolveImage(link) → Promise<URL>,
+ *         spell (siehe spell.js, nur am Desktop übergeben), saveImage(file) → Promise<Markdown-Link> }
  * Gibt { view, value, set(text), focus(), jumpToLine(i), destroy() } zurück.
  */
 export function createEditor(opts) {
@@ -309,6 +419,8 @@ export function createEditor(opts) {
     livePreview({ openLink: opts.openLink, resolveImage }),
     opts.decorate ? extraMarks(opts.decorate) : [],
     opts.placeholder ? cmPlaceholder(opts.placeholder) : [],
+    opts.spell ? spellSuggest(opts.spell) : [],
+    opts.saveImage ? imagePaste(opts.saveImage) : [],
     EditorView.updateListener.of((u) => { if (u.docChanged) opts.onChange?.(u.state.doc.toString()); }),
   ];
 

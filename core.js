@@ -511,6 +511,30 @@ export const core = {
   },
 
   /** Object-URL für eine Datei im Vault (z. B. Bild). Mit URL.revokeObjectURL wieder freigeben. */
+  /** Legt eine Datei (z. B. ein eingefügtes Bild) an; Ordner werden erzeugt. Fehler, wenn es sie schon gibt. */
+  async createFile(path, blob) {
+    await this.requireAccess();
+    const parts = path.split('/');
+    let dir = this.vault;
+    for (const p of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(p, { create: true });
+    try {
+      await dir.getFileHandle(parts.at(-1));
+      throw new Error(`„${path}“ existiert bereits`);
+    } catch (err) {
+      if (err.name !== 'NotFoundError') throw err;
+    }
+    const handle = await dir.getFileHandle(parts.at(-1), { create: true });
+    await write(handle, blob);
+    handles.set(path, handle);
+    const k = parts.at(-1).toLowerCase();
+    if (attachments.index) attachments.index.set(k, [...(attachments.index.get(k) || []), path]);
+  },
+
+  /** Gibt es die Datei (beliebiger Typ)? */
+  async exists(path) {
+    try { await this.fileHandle(path); return true; } catch { return false; }
+  },
+
   async fileUrl(path) {
     const file = await (await this.fileHandle(path)).getFile();
     return URL.createObjectURL(file);
