@@ -337,10 +337,11 @@ function imagePaste(saveImage) {
     for (const file of files) {
       try {
         const md = await saveImage(file);
+        // in die Zeile, mit Leerzeichen getrennt: mehrere eingefügte Bilder ergeben eine Reihe
         const { from, to } = view.state.selection.main;
-        const line = view.state.doc.lineAt(from);
-        const before = from > line.from ? '\n' : '';
-        view.dispatch({ changes: { from, to, insert: before + md + '\n' }, selection: { anchor: from + before.length + md.length + 1 }, userEvent: 'input' });
+        const before = /\S/.test(view.state.sliceDoc(from - 1, from)) ? ' ' : '';
+        const insert = before + md + ' ';
+        view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length }, userEvent: 'input' });
       } catch (err) {
         alert('Bild konnte nicht gespeichert werden: ' + err.message);
       }

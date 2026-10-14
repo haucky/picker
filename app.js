@@ -115,7 +115,7 @@ async function useMarkdownLinks() {
   return markdownLinks;
 }
 
-/** Speichert ein eingefügtes Bild wie Obsidian als images/Pasted image JJJJMMTTHHMMSS.png und gibt den Link zurück. */
+/** Speichert ein eingefügtes Bild wie Obsidian als images/Pasted image JJJJMMTTHHMMSS.png und gibt den Link (klein) zurück. */
 async function saveImage(file) {
   const ext = IMAGE_EXT[file.type] || (/\.(\w+)$/.exec(file.name || '')?.[1] ?? 'png');
   const d = new Date();
@@ -124,7 +124,7 @@ async function saveImage(file) {
   let name = `Pasted image ${stamp}.${ext}`;
   for (let i = 1; await core.exists(`${IMAGE_DIR}/${name}`); i++) name = `Pasted image ${stamp} ${i}.${ext}`;
   await core.createFile(`${IMAGE_DIR}/${name}`, file);
-  return (await useMarkdownLinks()) ? `![](${IMAGE_DIR}/${encodeURI(name)})` : `![[${name}]]`;
+  return (await useMarkdownLinks()) ? `![|small](${IMAGE_DIR}/${encodeURI(name)})` : `![[${name}|small]]`;
 }
 
 /* ---------- Korrekturvorschläge (nur Desktop: feiner Zeiger) ---------- */
