@@ -42,7 +42,7 @@ Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.m
   Was ist ein Equi-Join?
   - Join mit Gleichheitsbedingung
 
-  Wozu Normalisierung?
+  Wozu Normalisierung? #not-for-exam
   - Anomalien vermeiden
   <!!! Folie 23 nochmal anschauen
   ```
@@ -51,9 +51,13 @@ Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.m
 
   **Todos:** `<!!! Text bis Zeilenende`. Erledigt = Zeile löschen.
 
+  **Tags hinter der Frage:** Die Grund-Tags der VL (Stapel-Tag bzw. dessen Untertag und `#date/…`) werden nicht angezeigt. Alle anderen Tags aus der Tag-Zeile einer Notiz stehen hinter ihrer Frage und lassen sich dort ändern, hinzufügen oder löschen (z. B. `#not-for-exam`). Mit `- ohne: #not-for-exam` im Stapel in `Review.md` wird so eine Frage nicht mehr abgefragt, bleibt aber in der VL.
+
+  Farben (Solarized): Fragen blau, Tags cyan, Todos orange, Antwort-Daten magenta, Code cyan, Fehler rot unterkringelt.
+
 - **Speichern** gleicht über den Dateinamen ab (Dateiname = Frage ohne `?`):
   - gleiche Frage → nur der Inhalt wird ersetzt; Frontmatter (SR-Stand) und Tag-Zeile bleiben,
-  - neue Frage → neue Notiz im Ordner der anderen TILs der VL (bei neuer VL: Ordner der neuesten Notiz im Stapel) mit den gemeinsamen Tags der VL (mindestens Stapel-Tag und `#date/…`),
+  - neue Frage → neue Notiz im Ordner der anderen TILs der VL (bei neuer VL: Ordner der neuesten Notiz im Stapel) mit den Grund-Tags der VL plus den Tags hinter der Frage,
   - fehlende Frage → Datei wandert nach Rückfrage in den Papierkorb `.trash/` (wie in Obsidian).
 
   Eine umformulierte Frage ist also eine neue Notiz (der SR-Stand der alten geht verloren). Die Reihenfolge im Text wird als `study-order` in der Frontmatter gespeichert. Wurden Dateien seit dem Öffnen außerhalb geändert (z. B. per Obsidian Sync), fragt die App vor dem Überschreiben. Ungespeicherter Text bleibt als Entwurf im Browser erhalten und wird beim nächsten Öffnen der VL wiederhergestellt.
@@ -100,6 +104,10 @@ Notizen ohne diese Felder sind „neu“; die Felder werden beim ersten Bewerten
 - Fällige Karten kommen zuerst (am längsten überfällige oben), danach neue: älteste VL (`#date/…`) zuerst, innerhalb einer VL in der Reihenfolge aus dem Study-Editor (`study-order`).
 - Tastatur am Laptop: Leertaste/Enter = Antwort zeigen, 1/2/3 = Schwer/Gut/Leicht, Enter = Erledigt, u = Rückgängig.
 
+### Darstellung
+
+Farbschema [Solarized](https://ethanschoonover.com/solarized/) hell und dunkel. Standard ist „Automatisch“ (folgt der Einstellung des Handys); umstellen unter **Sync → Darstellung**.
+
 ### Zwischenspeicher
 
 Damit die Suche schnell ist, hält die App eine Kopie aller Notizen im Browser-Speicher (IndexedDB) – nur auf dem Gerät, nichts wird hochgeladen.
@@ -114,6 +122,7 @@ Damit die Suche schnell ist, hält die App eine Kopie aller Notizen im Browser-S
 
 - Zeigt, wann und wie zuletzt abgeglichen wurde, mit **Jetzt abgleichen** und **Komplett abgleichen**.
 - Darunter die letzten Einträge des Plugin-Logs (zur Kontrolle, ob das Plugin läuft).
+- Ganz unten: **Darstellung** (Automatisch / Hell / Dunkel).
 
 ## Obsidian-Plugin „Picker Changelog“
 

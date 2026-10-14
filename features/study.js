@@ -3,7 +3,7 @@
 import { h } from './dom.js';
 import { CONFIG_PATH, parseDecks, isConfig, today, dayToGerman } from './srs.js';
 import {
-  todos, todoStart, groupByDay, buildDoc, parseDoc, planSave, roundtripIssues, tagLineFor, isQuestionLine,
+  todos, todoStart, groupByDay, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
 } from './studydoc.js';
 
 const DRAFT_PREFIX = 'study-draft:';
@@ -158,14 +158,15 @@ async function openVL(deck, day, focus) {
   } finally {
     busy = false;
   }
-  const base = buildDoc(originals);
+  const tags = baseTags(originals.map((o) => o.text), deck.tag, day);
+  const base = buildDoc(originals, tags);
   const key = draftKey(deck, day);
   const draft = loadDraft(key);
   ed = {
     deck, day, originals, base, draftKey: key,
     folder: folderFor(deck, originals),
-    tagLine: tagLineFor(originals.map((o) => o.text), deck.tag, day),
-    issues: roundtripIssues(originals),
+    tags,
+    issues: roundtripIssues(originals, tags),
   };
   history.pushState({ study: 'edit' }, '');
   document.body.classList.add('study-editing');
@@ -193,7 +194,7 @@ function renderEditor(text) {
   ed.ta.value = text;
   ed.ta.addEventListener('input', onInput);
 
-  const info = [h('span', {}, `Neue Fragen: ${ed.folder || '(oberster Ordner)'} · ${ed.tagLine}`)];
+  const info = [h('span', {}, `Neue Fragen: ${ed.folder || '(oberster Ordner)'} · ${ed.tags.map((t) => '#' + t).join(' ')} – weitere Tags hinter die Frage`)];
   const parts = [
     h('header', { class: 'bar' },
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zurück', onclick: leave }, '←'),
@@ -240,23 +241,40 @@ function update() {
   ed.save.disabled = busy || text === ed.base;
 }
 
-/** Hintergrund-Ebene unter dem Textfeld: gleicher Text (unsichtbar) mit farbigen Markierungen. */
+/**
+ * Farbige Ebene unter dem Textfeld (dessen Text unsichtbar ist, nur der Cursor bleibt): gleicher Text,
+ * Fragen, Tags, Todos, Listenzeichen, Antwort-Daten, Code und Fehler eingefärbt. Keine fetten Schnitte,
+ * damit die Zeilen exakt so umbrechen wie im Textfeld.
+ */
 function renderHighlights(text, errLines) {
   const frag = document.createDocumentFragment();
   const lines = text.split('\n');
   let fence = null;
   lines.forEach((line, i) => {
     if (i) frag.append('\n');
+    const span = h('span', { 'data-line': i });
+    frag.append(span);
     const f = /^\s*(`{3,}|~{3,})/.exec(line);
-    let q = false;
-    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; }
-    else if (f) fence = f[1];
-    else q = isQuestionLine(line);
-    const t = todoStart(line);
-    if (errLines.has(i)) frag.append(h('span', { class: 'hl-err', 'data-line': i }, line));
-    else if (q) frag.append(h('span', { class: 'hl-q', 'data-line': i }, line));
-    else if (t >= 0) frag.append(line.slice(0, t), h('span', { class: 'hl-todo', 'data-line': i }, line.slice(t)));
-    else frag.append(line);
+    if (fence || f) {
+      if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; } else fence = f[1];
+      span.className = 'hl-code';
+      span.append(line);
+      return;
+    }
+    if (errLines.has(i)) { span.className = 'hl-err'; span.append(line); return; }
+    const q = parseQuestion(line);
+    if (q) {
+      span.append(h('span', { class: 'hl-q' }, line.slice(0, q.tagsAt)));
+      if (q.tagsAt < line.length) span.append(h('span', { class: 'hl-tag' }, line.slice(q.tagsAt)));
+      return;
+    }
+    if (/^::\d{2}\.\d{2}\.\d{4}::\s*$/.test(line)) { span.className = 'hl-date'; span.append(line); return; }
+    let rest = line;
+    const m = /^(\s*(?:[-*+]|\d+[.)])(?:\s+\[.\])?\s)/.exec(rest);
+    if (m) { span.append(h('span', { class: 'hl-mark' }, m[1])); rest = rest.slice(m[1].length); }
+    const t = todoStart(rest);
+    if (t >= 0) span.append(rest.slice(0, t), h('span', { class: 'hl-todo' }, rest.slice(t)));
+    else span.append(rest);
   });
   frag.append('\n');
   ed.hl.replaceChildren(frag);
@@ -274,7 +292,7 @@ function jumpToLine(line) {
 function jumpTo({ title, todo }) {
   if (!ed) return;
   const lines = ed.ta.value.split('\n');
-  let start = lines.findIndex((l) => isQuestionLine(l) && l.trim().replace(/\?+$/, '').trim() === title);
+  let start = lines.findIndex((l) => parseQuestion(l)?.title === title);
   if (start < 0) start = 0;
   const i = lines.findIndex((l, k) => k >= start && todoStart(l) >= 0 && l.slice(todoStart(l) + 4).trim() === todo);
   jumpToLine(i >= 0 ? i : start);
@@ -313,7 +331,7 @@ async function save() {
     for (const k of core.notes.keys()) if (k.toLowerCase() === p) return true;
     return false;
   };
-  const plan = planSave(text, ed.originals, { folder: ed.folder, tagLine: ed.tagLine, exists });
+  const plan = planSave(text, ed.originals, { folder: ed.folder, base: ed.tags, exists });
   if (plan.errors.length) {
     update();
     ui.toast(plan.errors[0].msg + (plan.errors.length > 1 ? ` (+${plan.errors.length - 1})` : ''), 4000);

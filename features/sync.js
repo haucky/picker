@@ -1,5 +1,6 @@
 // Feature: Stand des Abgleichs, manueller (vollständiger) Abgleich, Diagnose des Obsidian-Plugin-Logs.
 import { h } from './dom.js';
+import { THEMES, getTheme, setTheme } from './theme.js';
 
 const SHOW_ENTRIES = 30;
 const OPS = { create: 'neu', modify: 'geändert', delete: 'gelöscht', rename: 'umbenannt', start: 'Obsidian gestartet' };
@@ -69,6 +70,14 @@ async function renderLog() {
   );
 }
 
+function themeRow() {
+  const row = h('div', { class: 'picks theme-picks' });
+  const render = () => row.replaceChildren(...Object.entries(THEMES).map(([k, label]) =>
+    h('button', { type: 'button', class: 'chip' + (getTheme() === k ? ' on' : ''), onclick: () => { setTheme(k); render(); } }, label)));
+  render();
+  return row;
+}
+
 async function run(full) {
   if (!(await core.hasPermission(true))) return ui.toast('Zugriff auf den Vault wurde nicht erlaubt.', 4000);
   await core.sync({ full });
@@ -98,6 +107,9 @@ export default {
         'und spätestens alle 3 Tage.'),
       h('h2', { class: 'section' }, 'Plugin-Log'),
       logEl,
+      h('h2', { class: 'section' }, 'Darstellung'),
+      themeRow(),
+      h('p', { class: 'hint left' }, 'Solarized hell/dunkel. „Automatisch“ folgt der Einstellung des Handys.'),
     );
     core.on('status', () => { if (!root.hidden) renderInfo(); });
   },

@@ -5,6 +5,7 @@ import tagging from './features/tagging.js';
 import study from './features/study.js';
 import review from './features/review.js';
 import syncTab from './features/sync.js';
+import { applyTheme } from './features/theme.js';
 
 // Neue Feature-Module hier eintragen: { id, title, mount(root, ui), show?() }
 const FEATURES = [search, tagging, study, review, syncTab];
@@ -143,6 +144,7 @@ function showApp() {
 /* ---------- Init ---------- */
 
 async function init() {
+  applyTheme();
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
   }

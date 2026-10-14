@@ -57,11 +57,15 @@ export function tagLineTags(text) {
   return parseTags(head.split(/\r?\n/)[0] || '');
 }
 
-/** Notizen eines Stapels nach VL: [{ day (null = ohne Datum), notes }], neueste VL zuerst. */
+/**
+ * Notizen eines Stapels nach VL: [{ day (null = ohne Datum), notes }], neueste VL zuerst.
+ * `ohne:` aus Review.md gilt hier nicht: ausgenommene Fragen gehören weiter zur VL, sie werden nur nicht abgefragt.
+ */
 export function groupByDay(notes, deck) {
   const groups = new Map();
+  const all = { ...deck, without: [] };
   for (const n of notes) {
-    if (isConfig(n.path) || !inDeck(n, deck)) continue;
+    if (isConfig(n.path) || !inDeck(n, all)) continue;
     const day = dayOfNote(n);
     if (!groups.has(day)) groups.set(day, []);
     groups.get(day).push(n);
@@ -78,44 +82,72 @@ export function sortNotes(notes) {
 }
 
 /**
- * Tag-Zeile für neue Fragen einer VL: Tags, die alle bisherigen TILs der VL in der Tag-Zeile haben
- * (ohne #review/… und #reviewed/…), mindestens aber der Stapel-Tag und #date/… der VL.
+ * Grund-Tags einer VL (ohne '#'): Stapel-Tag (bzw. der Untertag, den alle TILs der VL haben) und #date/….
+ * Alle anderen Tags einer Notiz stehen im Dokument hinter ihrer Frage; neue Fragen bekommen nur die Grund-Tags.
  */
-export function tagLineFor(texts, deckTag, day) {
+export function baseTags(texts, deckTag, day) {
+  const dt = deckTag.toLowerCase();
+  const isBase = (t) => { const k = t.toLowerCase(); return k === dt || k.startsWith(dt + '/') || k.startsWith('date/'); };
   let tags = null;
   for (const text of texts) {
-    const t = tagLineTags(text);
+    const t = tagLineTags(text).filter(isBase);
     const lower = new Set(t.map((x) => x.toLowerCase()));
     tags = tags ? tags.filter((x) => lower.has(x.toLowerCase())) : t;
   }
-  tags = (tags || []).filter((t) => !/^reviewed?\//i.test(t));
-  const dt = deckTag.toLowerCase();
-  if (!tags.some((t) => t.toLowerCase() === dt || t.toLowerCase().startsWith(dt + '/'))) tags.unshift(deckTag);
+  tags = tags || [];
+  if (!tags.some((t) => !t.toLowerCase().startsWith('date/'))) tags.unshift(deckTag);
   if (day != null && !tags.some((t) => /^date\//i.test(t))) tags.push('date/' + dayToTagDate(day));
-  return tags.map((t) => '#' + t).join(' ');
+  return tags;
+}
+
+/** Tags der Tag-Zeile, die nicht zu den Grund-Tags gehören. */
+export function extraTags(text, base) {
+  const lower = new Set(base.map((t) => t.toLowerCase()));
+  return tagLineTags(text).filter((t) => !lower.has(t.toLowerCase()));
+}
+
+/** Ersetzt die Tag-Zeile (bzw. legt sie an); Frontmatter und Inhalt bleiben. */
+export function setTagLine(text, tags) {
+  const nl = text.includes('\r\n') ? '\r\n' : '\n';
+  const { bom, front, head, content } = splitNote(text);
+  const line = tags.map((t) => '#' + t).join(' ');
+  const first = head.split(/\r?\n/)[0];
+  if (/^[ \t]*#[^\s#]/.test(first)) {
+    const rest = head.slice(first.length);
+    return bom + front + (line ? line + rest : rest.replace(/^\r?\n/, '')) + content;
+  }
+  if (!line) return text;
+  return bom + front + line + nl + head + content;
 }
 
 /* ---------- Dokument ---------- */
 
+const QUESTION_RE = /^(.*?\?)((?:[ \t]+#(?=[\p{L}\p{N}_\-/]*[\p{L}_\-])[\p{L}\p{N}_\-/]+)*)[ \t]*$/u;
+
 /**
- * Ist die Zeile eine Frage? Nicht eingerückt, endet mit '?' und ist kein Markdown-Element
- * (Liste, Zitat, Überschrift/Tag, Tabelle, Code, Bild, HTML/Todo, Antwort-Datum).
+ * Frage-Zeile → { title, tags, tagsAt } oder null. Eine Frage ist nicht eingerückt, endet mit '?' (danach
+ * höchstens noch Tags: „Frage? #not-for-exam“) und ist kein Markdown-Element (Liste, Zitat, Überschrift/Tag,
+ * Tabelle, Code, Bild, HTML/Todo, Antwort-Datum). `tagsAt` = Spalte, ab der die Tags stehen.
  */
-export function isQuestionLine(line) {
-  const t = line.trimEnd();
-  if (!t.endsWith('?') || /^\s/.test(t)) return false;
-  if (/^(?:[-*+>#|`!<~]|::|\d+[.)](?:\s|$))/.test(t)) return false;
-  return /[^?]/.test(t);
+export function parseQuestion(line) {
+  if (/^\s/.test(line) || /^(?:[-*+>#|`!<~]|::|\d+[.)](?:\s|$))/.test(line)) return null;
+  const m = QUESTION_RE.exec(line);
+  if (!m) return null;
+  const title = m[1].replace(/\?+$/, '').trim();
+  if (!title) return null;
+  const tags = m[2].split(/\s+/).filter(Boolean).map((t) => t.slice(1).replace(/\/+$/, ''));
+  return { title, tags, tagsAt: m[1].length };
 }
 
-const titleOf = (line) => line.trim().replace(/\?+$/, '').trim();
+export const isQuestionLine = (line) => !!parseQuestion(line);
 
-/** Dokument aus Notizen (in dieser Reihenfolge). */
-export function buildDoc(notes) {
+/** Dokument aus Notizen (in dieser Reihenfolge); abweichende Tags stehen hinter der Frage. */
+export function buildDoc(notes, base) {
   if (!notes.length) return '';
   return notes.map((n) => {
     const body = normBody(splitNote(n.text).content);
-    return n.title + '?' + (body ? '\n' + body : '');
+    const tags = extraTags(n.text, base).map((t) => ' #' + t).join('');
+    return n.title + '?' + tags + (body ? '\n' + body : '');
   }).join('\n\n') + '\n';
 }
 
@@ -136,8 +168,9 @@ export function parseDoc(text) {
       if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
     } else if (f) {
       fence = f[1];
-    } else if (isQuestionLine(line)) {
-      cur = { title: titleOf(line), line: i, lines: [] };
+    } else if (parseQuestion(line)) {
+      const q = parseQuestion(line);
+      cur = { title: q.title, tags: q.tags, line: i, lines: [] };
       items.push(cur);
       return;
     }
@@ -163,15 +196,27 @@ export function parseDoc(text) {
 }
 
 /** Titel von Notizen, die sich nicht verlustfrei als Dokument darstellen lassen (z. B. Inhalt mit Frage-Zeile). */
-export function roundtripIssues(notes) {
+export function roundtripIssues(notes, base) {
   return notes.filter((n) => {
     const body = normBody(splitNote(n.text).content);
-    const { items, errors } = parseDoc(n.title + '?\n' + body);
-    return errors.length || items.length !== 1 || items[0].title !== n.title || items[0].body !== body;
+    const { items, errors } = parseDoc(buildDoc([n], base));
+    return errors.length || items.length !== 1 || items[0].title !== n.title || items[0].body !== body
+      || items[0].tags.join(' ') !== extraTags(n.text, base).join(' ');
   }).map((n) => n.title);
 }
 
 /* ---------- Abgleich ---------- */
+
+/**
+ * Notiz mit neuem Inhalt, neuen abweichenden Tags und Reihenfolge. Frontmatter (SR-Stand) und Zeilenumbrüche
+ * bleiben; die Tag-Zeile wird nur angefasst, wenn sich die abweichenden Tags geändert haben.
+ */
+export function applyItem(text, { body, tags }, order, base) {
+  const lower = new Set(base.map((t) => t.toLowerCase()));
+  const keep = tagLineTags(text).filter((t) => lower.has(t.toLowerCase()));
+  if (extraTags(text, base).join(' ') !== tags.join(' ')) text = setTagLine(text, [...keep, ...tags]);
+  return applyBody(text, body, order);
+}
 
 /** Notiz mit neuem Inhalt und Reihenfolge; Frontmatter (SR-Stand), Tag-Zeile und Zeilenumbrüche bleiben. */
 export function applyBody(text, body, order) {
@@ -186,13 +231,13 @@ export function applyBody(text, body, order) {
   return out;
 }
 
-export function newNoteText(tagLine, body, order) {
-  return `---\n${ORDER_FIELD}: ${order}\n---\n${tagLine}\n${body ? body + '\n' : ''}`;
+export function newNoteText(tags, body, order) {
+  return `---\n${ORDER_FIELD}: ${order}\n---\n${tags.map((t) => '#' + t).join(' ')}\n${body ? body + '\n' : ''}`;
 }
 
 /**
  * Plant das Speichern. `originals`: [{ path, title, text }] = Stand der VL beim Öffnen.
- * ctx: { folder, tagLine, exists(path) → bool (Groß-/Kleinschreibung egal) }.
+ * ctx: { folder, base (Grund-Tags), exists(path) → bool (Groß-/Kleinschreibung egal) }.
  * Gibt { errors, updates, creates, deletes } zurück; jede Änderung als { path, title, text? }.
  */
 export function planSave(doc, originals, ctx) {
@@ -201,15 +246,18 @@ export function planSave(doc, originals, ctx) {
   const creates = [];
   const byTitle = new Map(originals.map((o) => [o.title, o]));
   const used = new Set();
+  const baseLower = new Set(ctx.base.map((t) => t.toLowerCase()));
   items.forEach((it, i) => {
+    const seen = new Set(baseLower);
+    it = { ...it, tags: it.tags.filter((t) => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase())) };
     const o = byTitle.get(it.title);
     if (o) {
       used.add(o.path);
-      const text = applyBody(o.text, it.body, i + 1);
+      const text = applyItem(o.text, it, i + 1, ctx.base);
       if (text !== o.text) updates.push({ path: o.path, title: o.title, text });
     } else {
       const path = (ctx.folder ? ctx.folder + '/' : '') + it.title + '.md';
-      creates.push({ path, title: it.title, line: it.line, text: newNoteText(ctx.tagLine, it.body, i + 1) });
+      creates.push({ path, title: it.title, line: it.line, text: newNoteText([...ctx.base, ...it.tags], it.body, i + 1) });
     }
   });
   const deletes = originals.filter((o) => !used.has(o.path)).map((o) => ({ path: o.path, title: o.title }));
