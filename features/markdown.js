@@ -1,6 +1,7 @@
 // Einfaches Markdown (Obsidian-Dialekt) → DOM, ohne innerHTML. Überschriften, Listen (verschachtelt, Checkboxen),
 // Zitate/Callouts, Code, Tabellen, Trennlinien, fett/kursiv/durchgestrichen/==markiert==, Links, [[Wikilinks]], Bilder.
 import { h } from './dom.js';
+import { parseSize, splitAlt, sizeImage } from './image.js';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const LIST_RE = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
@@ -216,15 +217,14 @@ function embed(raw, ctx) {
   return wikilink(raw, ctx); // Notiz-Einbettung: als Link anzeigen
 }
 
-function imageOrLink(src, alt, ctx) {
-  if (/^https?:/i.test(src)) return h('img', { src, alt, loading: 'lazy', class: 'md-img' });
-  return image(src, alt, null, ctx);
+function imageOrLink(src, rawAlt, ctx) {
+  const { alt, size } = splitAlt(rawAlt);
+  if (/^https?:/i.test(src)) return sizeImage(h('img', { src, alt, loading: 'lazy', class: 'md-img' }), size);
+  return image(src, alt || src, size, ctx);
 }
 
 function image(link, alt, size, ctx) {
-  const img = h('img', { alt, class: 'md-img', hidden: true });
-  const width = /^(\d+)(?:x\d+)?$/.exec((size || '').trim());
-  if (width) img.style.maxWidth = width[1] + 'px';
+  const img = sizeImage(h('img', { alt, class: 'md-img', hidden: true }), typeof size === 'string' ? parseSize(size) : size);
   const ph = h('span', { class: 'md-img-ph' }, '🖼 ' + alt);
   const wrap = h('span', { class: 'md-img-wrap' }, ph, img);
   if (ctx.resolveImage) {

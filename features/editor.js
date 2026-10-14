@@ -7,6 +7,7 @@ import {
   history, defaultKeymap, historyKeymap, indentMore, indentLess,
   Language, defineLanguageFacet, LanguageSupport, syntaxTree, markdownParser, GFM,
 } from '../vendor/codemirror.js';
+import { parseSize, splitAlt, sizeImage } from './image.js';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const WIKI_RE = /(!?)\[\[([^\]\n]+?)\]\]/g;
@@ -57,11 +58,11 @@ class LinkWidget extends WidgetType {
 }
 
 class ImageWidget extends WidgetType {
-  constructor(link, resolve) { super(); this.link = link; this.resolve = resolve; }
-  eq(o) { return o.link === this.link; }
+  constructor(link, resolve, size) { super(); this.link = link; this.resolve = resolve; this.size = size; }
+  eq(o) { return o.link === this.link && JSON.stringify(o.size) === JSON.stringify(this.size); }
   toDOM() {
-    const img = document.createElement('img');
-    img.className = 'cm-img';
+    const img = sizeImage(document.createElement('img'), this.size);
+    img.classList.add('cm-img');
     img.alt = this.link;
     if (this.resolve) {
       this.resolve(this.link).then((url) => { if (url) img.src = url; else img.replaceWith(missing(this.link)); })
@@ -160,8 +161,8 @@ function livePreview({ openLink, resolveImage }) {
             }
             if (name === 'Image') {
               if (touches(node.from, node.to)) return false;
-              const m = /\]\(\s*<?([^)\s>]+)/.exec(state.doc.sliceString(node.from, node.to));
-              if (m) out.push(Decoration.replace({ widget: new ImageWidget(decodeURI(m[1]), resolveImage) }).range(node.from, node.to));
+              const m = /^!\[([^\]]*)\]\(\s*<?([^)\s>]+)/.exec(state.doc.sliceString(node.from, node.to));
+              if (m) out.push(Decoration.replace({ widget: new ImageWidget(decodeURI(m[2]), resolveImage, splitAlt(m[1]).size) }).range(node.from, node.to));
               return false;
             }
             if (name === 'ListMark') {
@@ -218,7 +219,7 @@ function livePreview({ openLink, resolveImage }) {
           const [target, alias] = m[2].split('|');
           if (touches(a, b)) { out.push(Decoration.mark({ class: 'cm-wikilink-src' }).range(a, b)); continue; }
           if (m[1] && IMAGE_EXT.test(target.trim())) {
-            out.push(Decoration.replace({ widget: new ImageWidget(target.trim(), resolveImage) }).range(a, b));
+            out.push(Decoration.replace({ widget: new ImageWidget(target.trim(), resolveImage, parseSize(alias)) }).range(a, b));
           } else {
             const shown = (alias || target).trim();
             out.push(Decoration.replace({ widget: new LinkWidget(shown, target.split('#')[0].trim(), openLink) }).range(a, b));

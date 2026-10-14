@@ -234,7 +234,8 @@ async function init() {
   });
   // Android-Zurück-Taste / Geste schließt die Notiz.
   window.addEventListener('popstate', () => {
-    if (!current) return;
+    // noch in derselben Notiz (z. B. Großansicht eines Bilds geschlossen)
+    if (!current || (history.state && history.state.note === current.path)) return;
     if (isDirty() && !confirm('Ungespeicherte Änderungen verwerfen?')) {
       history.pushState({ note: current.path }, '');
       return;
