@@ -3,7 +3,7 @@
 // Listen und Zitate pro Zeile). Ohne Fokus ist alles gerendert.
 import {
   EditorState, EditorView, ViewPlugin, Decoration, WidgetType, keymap, placeholder as cmPlaceholder, Prec,
-  StateField, StateEffect, showTooltip,
+  StateField, StateEffect, showTooltip, EditorSelection,
   history, defaultKeymap, historyKeymap, indentMore, indentLess,
   Language, defineLanguageFacet, LanguageSupport, syntaxTree, markdownParser, GFM,
 } from '../vendor/codemirror.js';
@@ -366,6 +366,48 @@ function imagePaste(saveImage) {
   });
 }
 
+/* ---------- Formatierung per Tastenkürzel (Strg/Cmd+B, Strg/Cmd+I) ---------- */
+
+/** Ist der Bereich [from, to] von `mark` umschlossen (bei '*' nicht Teil von '**', außer '***')? */
+function wrapped(state, from, to, mark) {
+  const before = state.sliceDoc(Math.max(0, from - 3), from);
+  const after = state.sliceDoc(to, to + 3);
+  if (!before.endsWith(mark) || !after.startsWith(mark)) return false;
+  if (mark === '*' && before.endsWith('**') && after.startsWith('**')) return before.endsWith('***') && after.startsWith('***');
+  return true;
+}
+
+/**
+ * Setzt bzw. entfernt `mark` um jede Auswahl. Ohne Auswahl: um das Wort am Cursor; außerhalb eines Worts
+ * werden leere Marker eingefügt und der Cursor steht dazwischen.
+ */
+function toggleMark(mark) {
+  return (view) => {
+    const { state } = view;
+    const n = mark.length;
+    view.dispatch(state.changeByRange((r) => {
+      let { from, to } = r;
+      if (r.empty) {
+        const word = state.wordAt(r.head);
+        if (word) ({ from, to } = word);
+      }
+      const text = state.sliceDoc(from, to);
+      // Auswahl schließt die Marker selbst ein: **fett** → fett
+      if (text.length >= 2 * n && text.startsWith(mark) && text.endsWith(mark) && !(mark === '*' && text.startsWith('**') && !text.startsWith('***'))) {
+        return { changes: [{ from, to: from + n }, { from: to - n, to }], range: EditorSelection.range(from, to - 2 * n) };
+      }
+      if (wrapped(state, from, to, mark)) {
+        const map = (pos) => pos - n;
+        return { changes: [{ from: from - n, to: from }, { from: to, to: to + n }],
+          range: r.empty ? EditorSelection.cursor(map(r.head)) : EditorSelection.range(map(from), map(to)) };
+      }
+      return { changes: [{ from, insert: mark }, { from: to, insert: mark }],
+        range: r.empty ? EditorSelection.cursor(r.head + n) : EditorSelection.range(from + n, to + n) };
+    }), { userEvent: 'input' });
+    return true;
+  };
+}
+
 /* ---------- Listen fortsetzen ---------- */
 
 /** Enter in einem Listenpunkt: nächster Punkt (Nummer +1, neue Checkbox); im leeren Punkt: Liste beenden. */
@@ -414,6 +456,8 @@ export function createEditor(opts) {
       { key: 'Enter', run: continueList },
       { key: 'Tab', run: indentMore },
       { key: 'Shift-Tab', run: indentLess },
+      { key: 'Mod-b', run: toggleMark('**') },
+      { key: 'Mod-i', run: toggleMark('*') },
     ])),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     livePreview({ openLink: opts.openLink, resolveImage }),
