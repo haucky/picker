@@ -335,18 +335,45 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
   font-size: 1.4rem; line-height: 1;
 }
 .path { color: var(--muted); font-size: .8rem; margin: 8px 0; }
-#editor {
-  flex: 1;
-  width: 100%;
-  min-height: 60vh;
-  padding: 12px 4px;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font: 15px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  resize: none;
-  outline: none;
+#editor { flex: 1; min-height: 60vh; padding: 4px 0; }
+
+/* Markdown-Editor (CodeMirror) mit Live-Vorschau */
+.md-editor .cm-editor { height: auto; background: transparent; color: var(--text-2); }
+.md-editor .cm-editor.cm-focused { outline: none; }
+.md-editor .cm-scroller { overflow: visible; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.md-editor .cm-content { padding: 8px 0 40vh; caret-color: var(--text); min-height: 50vh; }
+.md-editor .cm-line { padding: 0 4px; }
+.md-editor .cm-placeholder { color: var(--muted); }
+.md-editor .cm-selectionBackground, .md-editor ::selection { background: rgba(38, 139, 210, .3) !important; }
+.md-editor .cm-h { color: var(--text); font-weight: 600; }
+.md-editor .cm-h1 { font-size: 1.5em; }
+.md-editor .cm-h2 { font-size: 1.3em; }
+.md-editor .cm-h3 { font-size: 1.15em; }
+.md-editor .cm-strong { font-weight: 700; color: var(--text); }
+.md-editor .cm-em { font-style: italic; }
+.md-editor .cm-strike { text-decoration: line-through; color: var(--muted); }
+.md-editor .cm-icode, .md-editor .cm-codeblock {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .9em; color: var(--cyan);
 }
+.md-editor .cm-icode { background: var(--surface); border-radius: 4px; padding: 0 2px; }
+.md-editor .cm-codeblock { background: var(--surface); }
+.md-editor .cm-fence { color: var(--muted); }
+.md-editor .cm-quote { border-left: 3px solid var(--line); padding-left: 12px; color: var(--text-2); font-style: italic; }
+.md-editor .cm-bullet, .md-editor .cm-listmark { color: var(--muted); }
+.md-editor .cm-bullet { display: inline-block; min-width: .7em; }
+.md-editor .cm-task { width: 1em; height: 1em; margin: 0 .3em 0 0; vertical-align: -0.12em; accent-color: var(--accent); }
+.md-editor .cm-link, .md-editor .cm-wikilink { color: var(--violet); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.md-editor .cm-wikilink-src { color: var(--violet); }
+.md-editor .cm-tag { color: var(--cyan); }
+.md-editor .cm-hr { display: inline-block; width: 100%; border-top: 1px solid var(--line); vertical-align: middle; }
+.md-editor .cm-img { display: block; max-width: 100%; max-height: 60vh; border-radius: 8px; margin: 4px 0; }
+.md-editor .cm-img-missing { color: var(--muted); font-size: .9em; }
+/* Study: Fragen, Todos, Antwort-Daten, Fehler/Warnungen */
+.md-editor .cm-q { color: var(--accent); font-weight: 600; }
+.md-editor .cm-todo { color: var(--orange); background: var(--todo-bg); border-radius: 3px; }
+.md-editor .cm-date { color: var(--magenta); }
+.md-editor .cm-err { background: var(--err-bg); text-decoration: underline wavy var(--red); }
+.md-editor .cm-warn { text-decoration: underline wavy var(--yellow); }
 
 /* Study */
 .study-list, .study-edit { display: flex; flex-direction: column; gap: 12px; }
@@ -368,28 +395,6 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .notice .link { color: inherit; min-height: 0; }
 body.study-editing .tabs { display: none; }
 body.study-editing .panel { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
-.study-wrap { position: relative; }
-.study-hl, .study-text {
-  margin: 0; padding: 8px 4px; border: 0;
-  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; tab-size: 4; letter-spacing: normal;
-}
-.study-hl { position: absolute; inset: 0; color: var(--text-2); pointer-events: none; overflow: hidden; }
-.study-hl .hl-q { color: var(--accent); }
-.study-hl .hl-tag { color: var(--cyan); }
-.study-hl .hl-mark { color: var(--muted); }
-.study-hl .hl-todo { color: var(--orange); background: var(--todo-bg); border-radius: 3px; }
-.study-hl .hl-date { color: var(--magenta); }
-.study-hl .hl-code { color: var(--cyan); }
-.study-hl .hl-err { color: var(--red); background: var(--err-bg); text-decoration: underline wavy var(--red); }
-.study-hl .hl-warn { text-decoration: underline wavy var(--yellow); }
-.study-text {
-  position: relative; display: block; width: 100%; min-height: 60vh;
-  background: transparent; color: transparent; caret-color: var(--text); -webkit-text-fill-color: transparent;
-  resize: none; outline: none; overflow: hidden;
-}
-.study-text::selection { background: rgba(38, 139, 210, .3); }
-.study-text::placeholder { color: var(--muted); -webkit-text-fill-color: var(--muted); }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom));
@@ -399,3 +404,4 @@ body.study-editing .panel { padding-bottom: calc(16px + env(safe-area-inset-bott
   background: var(--text); color: var(--bg);
   z-index: 10;
 }
+.md-editor .cm-frontmatter { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .85em; color: var(--muted); }

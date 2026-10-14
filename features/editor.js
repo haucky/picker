@@ -1,0 +1,337 @@
+// Gemeinsamer Markdown-Editor (CodeMirror 6) mit Live-Vorschau wie in Obsidian: Markdown wird gerendert,
+// nur wo der Cursor steht, ist der Quelltext zu sehen (Inline-Formatierung pro Element, Überschriften,
+// Listen und Zitate pro Zeile). Ohne Fokus ist alles gerendert.
+import {
+  EditorState, EditorView, ViewPlugin, Decoration, WidgetType, keymap, placeholder as cmPlaceholder, Prec,
+  history, defaultKeymap, historyKeymap, indentMore, indentLess,
+  Language, defineLanguageFacet, LanguageSupport, syntaxTree, markdownParser, GFM,
+} from '../vendor/codemirror.js';
+
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
+const WIKI_RE = /(!?)\[\[([^\]\n]+?)\]\]/g;
+const TAG_RE = /(^|[\s(,])(#[\p{L}\p{N}_\-/]*[\p{L}_\-][\p{L}\p{N}_\-/]*)/gu;
+const INLINE_HIDE = { Emphasis: 'cm-em', StrongEmphasis: 'cm-strong', Strikethrough: 'cm-strike', InlineCode: 'cm-icode' };
+const INLINE_MARKS = new Set(['EmphasisMark', 'CodeMark', 'StrikethroughMark']);
+const CODE_NODES = new Set(['InlineCode', 'FencedCode', 'CodeBlock', 'CodeText']);
+
+const markdownLang = new LanguageSupport(new Language(defineLanguageFacet(), markdownParser.configure([GFM]), [], 'markdown'));
+
+/* ---------- Widgets ---------- */
+
+class BulletWidget extends WidgetType {
+  eq() { return true; }
+  toDOM() { const s = document.createElement('span'); s.className = 'cm-bullet'; s.textContent = '•'; return s; }
+}
+
+class CheckboxWidget extends WidgetType {
+  constructor(checked, pos) { super(); this.checked = checked; this.pos = pos; }
+  eq(o) { return o.checked === this.checked && o.pos === this.pos; }
+  toDOM(view) {
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'cm-task';
+    box.checked = this.checked;
+    box.addEventListener('mousedown', (e) => e.preventDefault());
+    box.addEventListener('click', (e) => {
+      e.preventDefault();
+      view.dispatch({ changes: { from: this.pos + 1, to: this.pos + 2, insert: this.checked ? ' ' : 'x' } });
+    });
+    return box;
+  }
+  ignoreEvent() { return true; }
+}
+
+class LinkWidget extends WidgetType {
+  constructor(text, target, open) { super(); this.text = text; this.target = target; this.open = open; }
+  eq(o) { return o.text === this.text && o.target === this.target; }
+  toDOM() {
+    const a = document.createElement('span');
+    a.className = 'cm-wikilink';
+    a.textContent = this.text;
+    a.addEventListener('mousedown', (e) => e.preventDefault());
+    a.addEventListener('click', (e) => { e.preventDefault(); this.open?.(this.target); });
+    return a;
+  }
+  ignoreEvent() { return true; }
+}
+
+class ImageWidget extends WidgetType {
+  constructor(link, resolve) { super(); this.link = link; this.resolve = resolve; }
+  eq(o) { return o.link === this.link; }
+  toDOM() {
+    const img = document.createElement('img');
+    img.className = 'cm-img';
+    img.alt = this.link;
+    if (this.resolve) {
+      this.resolve(this.link).then((url) => { if (url) img.src = url; else img.replaceWith(missing(this.link)); })
+        .catch(() => img.replaceWith(missing(this.link)));
+    }
+    return img;
+  }
+}
+function missing(link) {
+  const s = document.createElement('span');
+  s.className = 'cm-img-missing';
+  s.textContent = `🖼 ${link}`;
+  return s;
+}
+
+class HrWidget extends WidgetType {
+  eq() { return true; }
+  toDOM() { const hr = document.createElement('span'); hr.className = 'cm-hr'; return hr; }
+}
+
+/* ---------- Live-Vorschau ---------- */
+
+function livePreview({ openLink, resolveImage }) {
+  return ViewPlugin.fromClass(class {
+    constructor(view) { this.decorations = this.build(view); }
+    update(u) {
+      if (u.docChanged || u.viewportChanged || u.selectionSet || u.focusChanged) this.decorations = this.build(u.view);
+    }
+    build(view) {
+      const { state } = view;
+      const focused = view.hasFocus;
+      const sel = state.selection.ranges;
+      const touches = (from, to) => focused && sel.some((r) => r.from <= to && r.to >= from);
+      const lineActive = (pos) => {
+        const l = state.doc.lineAt(pos);
+        return touches(l.from, l.to);
+      };
+      const out = [];
+      const hide = (from, to) => { if (to > from) out.push(Decoration.replace({}).range(from, to)); };
+      const tree = syntaxTree(state);
+      const code = [];
+      // YAML-Frontmatter am Anfang nicht als Markdown rendern (sonst Trennlinie/Überschrift)
+      const fm = /^---[ \t]*\n(?:[\s\S]*?\n)?---[ \t]*(?:\n|$)/.exec(state.doc.sliceString(0, Math.min(state.doc.length, 20000)));
+      const fmEnd = fm ? fm[0].replace(/\n$/, '').length : 0;
+      if (fmEnd) {
+        for (let l = state.doc.line(1); ; l = state.doc.line(l.number + 1)) {
+          out.push(Decoration.line({ class: 'cm-frontmatter' }).range(l.from));
+          if (l.to >= fmEnd || l.number >= state.doc.lines) break;
+        }
+        code.push([0, fmEnd]);
+      }
+
+      for (const { from, to } of view.visibleRanges) {
+        tree.iterate({
+          from, to,
+          enter: (node) => {
+            if (node.from < fmEnd) return node.to > fmEnd;
+            const name = node.name;
+            if (CODE_NODES.has(name)) code.push([node.from, node.to]);
+            const heading = /^ATXHeading(\d)$/.exec(name);
+            if (heading) {
+              out.push(Decoration.line({ class: `cm-h cm-h${heading[1]}` }).range(state.doc.lineAt(node.from).from));
+              return;
+            }
+            if (name === 'HeaderMark') {
+              if (!lineActive(node.from)) {
+                const next = state.doc.sliceString(node.to, node.to + 1);
+                hide(node.from, node.to + (next === ' ' ? 1 : 0));
+              }
+              return;
+            }
+            if (INLINE_HIDE[name]) {
+              out.push(Decoration.mark({ class: INLINE_HIDE[name] }).range(node.from, node.to));
+              if (!touches(node.from, node.to)) {
+                const c = node.node.cursor();
+                if (c.firstChild()) {
+                  do { if (INLINE_MARKS.has(c.name)) hide(c.from, c.to); } while (c.nextSibling());
+                }
+              }
+              return name !== 'InlineCode';
+            }
+            if (name === 'Link') {
+              if (touches(node.from, node.to)) return false;
+              const c = node.node.cursor();
+              let textEnd = null;
+              if (c.firstChild()) {
+                do {
+                  if (c.name === 'LinkMark') { if (textEnd == null && state.doc.sliceString(c.from, c.to) === ']') textEnd = c.from; }
+                } while (c.nextSibling());
+              }
+              if (textEnd == null) return false;
+              hide(node.from, node.from + 1);
+              out.push(Decoration.mark({ class: 'cm-link' }).range(node.from + 1, textEnd));
+              hide(textEnd, node.to);
+              return false;
+            }
+            if (name === 'Image') {
+              if (touches(node.from, node.to)) return false;
+              const m = /\]\(\s*<?([^)\s>]+)/.exec(state.doc.sliceString(node.from, node.to));
+              if (m) out.push(Decoration.replace({ widget: new ImageWidget(decodeURI(m[1]), resolveImage) }).range(node.from, node.to));
+              return false;
+            }
+            if (name === 'ListMark') {
+              const mark = state.doc.sliceString(node.from, node.to);
+              const task = state.doc.sliceString(node.to, node.to + 5);
+              if (/^ \[[ xX]\]/.test(task)) {
+                if (!lineActive(node.from)) {
+                  hide(node.from, node.to + 1);
+                  out.push(Decoration.replace({ widget: new CheckboxWidget(task[2] !== ' ', node.to + 1) }).range(node.to + 1, node.to + 4));
+                }
+              } else if (/^[-*+]$/.test(mark) && !lineActive(node.from)) {
+                out.push(Decoration.replace({ widget: new BulletWidget() }).range(node.from, node.to));
+              } else {
+                out.push(Decoration.mark({ class: 'cm-listmark' }).range(node.from, node.to));
+              }
+              return;
+            }
+            if (name === 'Blockquote') {
+              for (let l = state.doc.lineAt(node.from); ; l = state.doc.line(l.number + 1)) {
+                out.push(Decoration.line({ class: 'cm-quote' }).range(l.from));
+                if (l.to >= node.to || l.number >= state.doc.lines) break;
+              }
+              return;
+            }
+            if (name === 'QuoteMark') {
+              if (!lineActive(node.from)) {
+                const next = state.doc.sliceString(node.to, node.to + 1);
+                hide(node.from, node.to + (next === ' ' ? 1 : 0));
+              }
+              return;
+            }
+            if (name === 'FencedCode') {
+              for (let l = state.doc.lineAt(node.from); ; l = state.doc.line(l.number + 1)) {
+                const fence = l.from === node.from || l.to >= node.to;
+                out.push(Decoration.line({ class: fence ? 'cm-codeblock cm-fence' : 'cm-codeblock' }).range(l.from));
+                if (l.to >= node.to || l.number >= state.doc.lines) break;
+              }
+              return false;
+            }
+            if (name === 'HorizontalRule') {
+              if (!lineActive(node.from)) out.push(Decoration.replace({ widget: new HrWidget() }).range(node.from, node.to));
+              return false;
+            }
+          },
+        });
+
+        // [[Wikilinks]], ![[Bilder]] und #Tags (nicht in Code)
+        const inCode = (pos) => code.some(([a, b]) => pos >= a && pos < b);
+        const text = state.doc.sliceString(from, to);
+        for (const m of text.matchAll(WIKI_RE)) {
+          const a = from + m.index;
+          const b = a + m[0].length;
+          if (inCode(a)) continue;
+          const [target, alias] = m[2].split('|');
+          if (touches(a, b)) { out.push(Decoration.mark({ class: 'cm-wikilink-src' }).range(a, b)); continue; }
+          if (m[1] && IMAGE_EXT.test(target.trim())) {
+            out.push(Decoration.replace({ widget: new ImageWidget(target.trim(), resolveImage) }).range(a, b));
+          } else {
+            const shown = (alias || target).trim();
+            out.push(Decoration.replace({ widget: new LinkWidget(shown, target.split('#')[0].trim(), openLink) }).range(a, b));
+          }
+        }
+        for (const m of text.matchAll(TAG_RE)) {
+          const a = from + m.index + m[1].length;
+          if (!inCode(a)) out.push(Decoration.mark({ class: 'cm-tag' }).range(a, a + m[2].length));
+        }
+      }
+      return Decoration.set(out, true);
+    }
+  }, { decorations: (v) => v.decorations });
+}
+
+/* ---------- Zusätzliche Markierungen (z. B. Study: Fragen, Todos, Fehler) ---------- */
+
+/**
+ * `decorate(text)` → [{ line (0-basiert), class } | { line, from, to, class }] (from/to = Spalten).
+ * Wird bei jeder Änderung für das ganze Dokument neu berechnet (für Dokumente in Notizgröße unkritisch).
+ */
+function extraMarks(decorate) {
+  return ViewPlugin.fromClass(class {
+    constructor(view) { this.decorations = this.build(view); }
+    update(u) { if (u.docChanged) this.decorations = this.build(u.view); }
+    build(view) {
+      const doc = view.state.doc;
+      const out = [];
+      for (const d of decorate(doc.toString())) {
+        if (d.line >= doc.lines) continue;
+        const l = doc.line(d.line + 1);
+        if (d.from == null) out.push(Decoration.line({ class: d.class }).range(l.from));
+        else if (d.to > d.from) out.push(Decoration.mark({ class: d.class }).range(l.from + d.from, l.from + Math.min(d.to, l.length)));
+      }
+      return Decoration.set(out, true);
+    }
+  }, { decorations: (v) => v.decorations });
+}
+
+/* ---------- Listen fortsetzen ---------- */
+
+/** Enter in einem Listenpunkt: nächster Punkt (Nummer +1, neue Checkbox); im leeren Punkt: Liste beenden. */
+function continueList(view) {
+  const { state } = view;
+  const r = state.selection.main;
+  if (!r.empty) return false;
+  const line = state.doc.lineAt(r.head);
+  const m = /^(\s*)(?:([-*+])|(\d+)([.)]))(\s+)(\[[ xX]\]\s+)?/.exec(line.text);
+  if (!m || r.head < line.from + m[0].length) return false;
+  const node = syntaxTree(state).resolveInner(r.head, -1);
+  for (let n = node; n; n = n.parent) if (n.name === 'FencedCode' || n.name === 'CodeBlock') return false;
+  if (!line.text.slice(m[0].length).trim()) {
+    view.dispatch({ changes: { from: line.from, to: line.to, insert: m[1] }, selection: { anchor: line.from + m[1].length }, userEvent: 'delete' });
+    return true;
+  }
+  const marker = m[2] || `${Number(m[3]) + 1}${m[4]}`;
+  view.dispatch({ ...state.replaceSelection('\n' + m[1] + marker + m[5] + (m[6] ? '[ ] ' : '')), scrollIntoView: true, userEvent: 'input' });
+  return true;
+}
+
+/* ---------- Editor ---------- */
+
+/**
+ * opts: { parent, doc, onChange(text), placeholder, decorate(text), openLink(target), resolveImage(link) → Promise<URL> }
+ * Gibt { view, value, set(text), focus(), jumpToLine(i), destroy() } zurück.
+ */
+export function createEditor(opts) {
+  const urls = new Map(); // Bild-Link → Object-URL (einmal auflösen, beim Neuladen freigeben)
+  const resolveImage = opts.resolveImage && ((link) => {
+    if (!urls.has(link)) urls.set(link, opts.resolveImage(link).catch(() => null));
+    return urls.get(link);
+  });
+  const freeUrls = () => {
+    for (const p of urls.values()) p.then((u) => { if (u && u.startsWith('blob:')) URL.revokeObjectURL(u); });
+    urls.clear();
+  };
+
+  const extensions = () => [
+    markdownLang,
+    history(),
+    EditorView.lineWrapping,
+    EditorView.contentAttributes.of({ spellcheck: 'true', autocorrect: 'on', autocapitalize: 'sentences' }),
+    Prec.high(keymap.of([
+      { key: 'Enter', run: continueList },
+      { key: 'Tab', run: indentMore },
+      { key: 'Shift-Tab', run: indentLess },
+    ])),
+    keymap.of([...defaultKeymap, ...historyKeymap]),
+    livePreview({ openLink: opts.openLink, resolveImage }),
+    opts.decorate ? extraMarks(opts.decorate) : [],
+    opts.placeholder ? cmPlaceholder(opts.placeholder) : [],
+    EditorView.updateListener.of((u) => { if (u.docChanged) opts.onChange?.(u.state.doc.toString()); }),
+  ];
+
+  const view = new EditorView({
+    parent: opts.parent,
+    state: EditorState.create({ doc: opts.doc || '', extensions: extensions() }),
+  });
+
+  return {
+    view,
+    get value() { return view.state.doc.toString(); },
+    /** Neuer Inhalt mit frischem Verlauf (Rückgängig beginnt neu). */
+    set(text) {
+      freeUrls();
+      view.setState(EditorState.create({ doc: text, extensions: extensions() }));
+    },
+    focus() { view.focus(); },
+    jumpToLine(i) {
+      const n = Math.min(Math.max(1, i + 1), view.state.doc.lines);
+      const pos = view.state.doc.line(n).from;
+      view.focus();
+      view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'center' }) });
+    },
+    destroy() { freeUrls(); view.destroy(); },
+  };
+}

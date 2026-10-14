@@ -1,6 +1,7 @@
 // Feature: Vorlesungen durcharbeiten. Stapel aus Review.md → VLs (Datum) → alle TILs einer VL als ein
 // Fließtext-Dokument („Frage?“-Zeile + Inhalt). Speichern ändert, legt an und verschiebt in den Papierkorb.
 import { h } from './dom.js';
+import { createEditor } from './editor.js';
 import { CONFIG_PATH, parseDecks, isConfig, today, dayToGerman } from './srs.js';
 import {
   todos, todoStart, todoText, groupByDay, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
@@ -117,8 +118,8 @@ function loadDraft(key) {
 }
 function storeDraft() {
   try {
-    if (ed.ta.value === ed.base) localStorage.removeItem(ed.draftKey);
-    else localStorage.setItem(ed.draftKey, JSON.stringify({ text: ed.ta.value, base: ed.base }));
+    if (ed.cm.value === ed.base) localStorage.removeItem(ed.draftKey);
+    else localStorage.setItem(ed.draftKey, JSON.stringify({ text: ed.cm.value, base: ed.base }));
   } catch { /* egal */ }
 }
 function dropDraft(key) {
@@ -187,13 +188,7 @@ function renderEditor(text) {
   ed.count = h('span', { class: 'count' });
   ed.errors = h('div', { class: 'notice err', hidden: true });
   ed.warnings = h('div', { class: 'notice', hidden: true });
-  ed.hl = h('div', { class: 'study-hl', 'aria-hidden': 'true' });
-  ed.ta = h('textarea', {
-    class: 'study-text', spellcheck: 'true', autocapitalize: 'sentences', 'aria-label': 'Fragen und Inhalte',
-    placeholder: 'Erste Frage?\n- Inhalt …\n\nZweite Frage? #tag\n- …\n!!! Todo bis Zeilenende',
-  });
-  ed.ta.value = text;
-  ed.ta.addEventListener('input', onInput);
+  const host = h('div', { class: 'md-editor', 'aria-label': 'Fragen und Inhalte' });
 
   const info = [h('span', {}, `Neue Fragen: ${ed.folder || '(oberster Ordner)'} · ${ed.tags.map((t) => '#' + t).join(' ')} – weitere Tags hinter die Frage`)];
   const parts = [
@@ -209,8 +204,18 @@ function renderEditor(text) {
         'gültige Frage-Zeile). Beim Speichern würden sie aufgeteilt: ' + ed.issues.map((t) => `„${t}“`).join(', ') +
         '. Zeile mit „- “ beginnen oder das „?“ am Ende entfernen.')));
   }
-  parts.push(ed.errors, ed.warnings, h('div', { class: 'study-wrap' }, ed.hl, ed.ta));
+  parts.push(ed.errors, ed.warnings, host);
   editEl.replaceChildren(...parts);
+  ed.cm = createEditor({
+    parent: host,
+    doc: text,
+    placeholder: 'Erste Frage?\n- Inhalt …\n\nZweite Frage? #tag\n- …\n!!! Todo bis Zeilenende',
+    onChange: onInput,
+    decorate: studyMarks,
+    openLink: (target) => ui.openLink(target),
+    // Bilder relativ zum Ordner der TILs dieser VL auflösen
+    resolveImage: (link) => ui.resolveImage(link, ed.folder ? ed.folder + '/_.md' : '_.md'),
+  });
   update();
 }
 
@@ -220,18 +225,11 @@ function onInput() {
   if (!raf) raf = requestAnimationFrame(() => { raf = 0; update(); });
 }
 
-/** Höhe, Markierungen, Fehler und Zähler aktualisieren. */
+/** Fehler, Hinweise, Zähler und Speichern-Knopf aktualisieren (Markierungen im Text: studyMarks). */
 function update() {
-  if (!ed) return;
-  const y = window.scrollY;
-  ed.ta.style.height = 'auto';
-  ed.ta.style.height = ed.ta.scrollHeight + 'px';
-  window.scrollTo(0, y);
-
-  const text = ed.ta.value;
+  if (!ed || !ed.cm) return;
+  const text = ed.cm.value;
   const { items, errors, warnings } = parseDoc(text);
-  const errLines = new Map(errors.map((e) => [e.line, e.msg]));
-  renderHighlights(text, errLines, new Set(warnings.map((w) => w.line)));
   ed.count.textContent = plural(items.length, 'Frage', 'Fragen');
   const list = (title, entries) => [
     h('strong', {}, title),
@@ -245,68 +243,45 @@ function update() {
   ed.save.disabled = busy || text === ed.base;
 }
 
-/**
- * Farbige Ebene unter dem Textfeld (dessen Text unsichtbar ist, nur der Cursor bleibt): gleicher Text,
- * Fragen, Tags, Todos, Listenzeichen, Antwort-Daten, Code und Fehler eingefärbt. Keine fetten Schnitte,
- * damit die Zeilen exakt so umbrechen wie im Textfeld.
- */
-function renderHighlights(text, errLines, warnLines) {
-  const frag = document.createDocumentFragment();
-  const lines = text.split('\n');
+/** Markierungen für den Editor: Fragen, Antwort-Daten, Todos, Fehler- und Hinweis-Zeilen (nicht in Codeblöcken). */
+function studyMarks(text) {
+  const { errors, warnings } = parseDoc(text);
+  const out = [
+    ...errors.map((e) => ({ line: e.line, class: 'cm-err' })),
+    ...warnings.map((w) => ({ line: w.line, class: 'cm-warn' })),
+  ];
   let fence = null;
-  lines.forEach((line, i) => {
-    if (i) frag.append('\n');
-    const span = h('span', { 'data-line': i });
-    frag.append(span);
+  text.split('\n').forEach((line, i) => {
     const f = /^\s*(`{3,}|~{3,})/.exec(line);
-    if (fence || f) {
-      if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; } else fence = f[1];
-      span.className = 'hl-code';
-      span.append(line);
-      return;
-    }
-    if (errLines.has(i)) { span.className = 'hl-err'; span.append(line); return; }
-    if (warnLines.has(i)) span.className = 'hl-warn';
+    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; return; }
+    if (f) { fence = f[1]; return; }
     const q = parseQuestion(line);
-    if (q) {
-      span.append(h('span', { class: 'hl-q' }, line.slice(0, q.tagsAt)));
-      if (q.tagsAt < line.length) span.append(h('span', { class: 'hl-tag' }, line.slice(q.tagsAt)));
-      return;
-    }
-    if (/^::\d{2}\.\d{2}\.\d{4}::\s*$/.test(line)) { span.className = 'hl-date'; span.append(line); return; }
-    let rest = line;
-    const m = /^(\s*(?:[-*+]|\d+[.)])(?:\s+\[.\])?\s)/.exec(rest);
-    if (m) { span.append(h('span', { class: 'hl-mark' }, m[1])); rest = rest.slice(m[1].length); }
-    const t = todoStart(rest);
-    if (t >= 0) span.append(rest.slice(0, t), h('span', { class: 'hl-todo' }, rest.slice(t)));
-    else span.append(rest);
+    if (q) { out.push({ line: i, from: 0, to: q.tagsAt, class: 'cm-q' }); return; }
+    if (/^::\d{2}\.\d{2}\.\d{4}::\s*$/.test(line)) { out.push({ line: i, from: 0, to: line.length, class: 'cm-date' }); return; }
+    const t = todoStart(line);
+    if (t >= 0) out.push({ line: i, from: t, to: line.length, class: 'cm-todo' });
   });
-  frag.append('\n');
-  ed.hl.replaceChildren(frag);
+  return out;
 }
 
 function jumpToLine(line) {
-  const lines = ed.ta.value.split('\n');
-  const pos = lines.slice(0, line).reduce((s, l) => s + l.length + 1, 0);
-  ed.ta.focus({ preventScroll: true });
-  ed.ta.setSelectionRange(pos, pos);
-  const span = ed.hl.querySelector(`[data-line="${line}"]`);
-  if (span) span.scrollIntoView({ block: 'center' });
+  ed.cm.jumpToLine(line);
 }
 
 function jumpTo({ title, todo }) {
   if (!ed) return;
-  const lines = ed.ta.value.split('\n');
+  const lines = ed.cm.value.split('\n');
   let start = lines.findIndex((l) => parseQuestion(l)?.title === title);
   if (start < 0) start = 0;
   const i = lines.findIndex((l, k) => k >= start && todoText(l) === todo);
   jumpToLine(i >= 0 ? i : start);
 }
 
-const isDirty = () => !!ed && ed.ta.value !== ed.base;
+const isDirty = () => !!ed && !!ed.cm && ed.cm.value !== ed.base;
 
 function closeEditor({ discard = false } = {}) {
   if (discard) dropDraft(ed.draftKey);
+  ed.cm?.destroy();
   ed = null;
   document.body.classList.remove('study-editing');
   editEl.hidden = true;
@@ -330,7 +305,7 @@ function leave() {
 
 async function save() {
   if (!ed || busy) return;
-  const text = ed.ta.value;
+  const text = ed.cm.value;
   const exists = (path) => {
     const p = path.toLowerCase();
     for (const k of core.notes.keys()) if (k.toLowerCase() === p) return true;

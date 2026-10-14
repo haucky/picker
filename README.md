@@ -104,6 +104,12 @@ Notizen ohne diese Felder sind „neu“; die Felder werden beim ersten Bewerten
 - Fällige Karten kommen zuerst (am längsten überfällige oben), danach neue: älteste VL (`#date/…`) zuerst, innerhalb einer VL in der Reihenfolge aus dem Study-Editor (`study-order`).
 - Tastatur am Laptop: Leertaste/Enter = Antwort zeigen, 1/2/3 = Schwer/Gut/Leicht, Enter = Erledigt, u = Rückgängig.
 
+### Editor
+
+Notiz-Editor (Suche → Notiz) und VL-Editor (Study) sind derselbe Markdown-Editor ([CodeMirror 6](https://codemirror.net/)) mit Live-Vorschau wie in Obsidian: Markdown wird gerendert, nur wo der Cursor steht, erscheint der Quelltext (fett/kursiv/Code/Links pro Element, Überschriften, Listen und Zitate pro Zeile). Gerendert werden Überschriften, **fett**, *kursiv*, ~~durchgestrichen~~, `Code`, Codeblöcke, Listen (•), Checkboxen (antippen schaltet um), Zitate, Trennlinien, `[[Links]]` (antippen öffnet die Notiz), Bilder (`![[bild.png]]`, `![](pfad)`) und `#Tags`. Tabellen und Formeln bleiben Text, die Frontmatter wird gedämpft angezeigt. Enter in einer Liste setzt sie fort (leerer Punkt beendet sie), Tab/Shift-Tab rückt ein/aus.
+
+CodeMirror liegt fertig gebündelt in `vendor/codemirror.js` (die App braucht weiterhin kein npm). Neu bauen bzw. aktualisieren: Versionen in `vendor/codemirror/package.json` anpassen, dann `vendor/codemirror/build.sh`.
+
 ### Darstellung
 
 Farbschema [Solarized](https://ethanschoonover.com/solarized/) hell und dunkel. Standard ist „Automatisch“ (folgt der Einstellung des Handys); umstellen unter **Sync → Darstellung**.

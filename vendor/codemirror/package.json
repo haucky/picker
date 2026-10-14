@@ -1,0 +1,13 @@
+{
+  "private": true,
+  "description": "Nur zum Bauen von vendor/codemirror.js (./build.sh). Die App selbst braucht kein npm.",
+  "dependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.14",
+    "@lezer/highlight": "1.2.5",
+    "@lezer/markdown": "1.8.0",
+    "esbuild": "0.28.2"
+  }
+}
