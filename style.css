@@ -365,7 +365,7 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .todo-where { color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; }
 .study-edit .path { margin: 0; overflow-wrap: anywhere; }
 .notice.err { border-color: var(--red); color: var(--red); }
-.notice.err .link { color: inherit; min-height: 0; }
+.notice .link { color: inherit; min-height: 0; }
 body.study-editing .tabs { display: none; }
 body.study-editing .panel { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 .study-wrap { position: relative; }
@@ -382,6 +382,7 @@ body.study-editing .panel { padding-bottom: calc(16px + env(safe-area-inset-bott
 .study-hl .hl-date { color: var(--magenta); }
 .study-hl .hl-code { color: var(--cyan); }
 .study-hl .hl-err { color: var(--red); background: var(--err-bg); text-decoration: underline wavy var(--red); }
+.study-hl .hl-warn { text-decoration: underline wavy var(--yellow); }
 .study-text {
   position: relative; display: block; width: 100%; min-height: 60vh;
   background: transparent; color: transparent; caret-color: var(--text); -webkit-text-fill-color: transparent;

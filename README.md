@@ -44,12 +44,12 @@ Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.m
 
   Wozu Normalisierung? #not-for-exam
   - Anomalien vermeiden
-  <!!! Folie 23 nochmal anschauen
+  !!! Folie 23 nochmal anschauen
   ```
 
   **Eine Frage** ist jede Zeile, die nicht eingerückt ist, mit `?` endet und kein Markdown-Element ist (beginnt nicht mit `-`, `*`, `+`, `1.`, `>`, `#`, `|`, `` ` ``, `!`, `<`, `~` oder `::`); Zeilen in Codeblöcken zählen nie. Alles bis zur nächsten Frage ist ihr Inhalt. Fragen werden lila hinterlegt, Todos orange, Fehler rot – so sieht man beim Tippen sofort, was als Frage gilt.
 
-  **Todos:** `<!!! Text bis Zeilenende`. Erledigt = Zeile löschen.
+  **Todos:** `!!! Text bis Zeilenende` (am Zeilenanfang, nach einem Listenzeichen oder nach einem Leerzeichen; „Wichtig!!!“ zählt nicht). Erledigt = Zeile löschen.
 
   **Tags hinter der Frage:** Die Grund-Tags der VL (Stapel-Tag bzw. dessen Untertag und `#date/…`) werden nicht angezeigt. Alle anderen Tags aus der Tag-Zeile einer Notiz stehen hinter ihrer Frage und lassen sich dort ändern, hinzufügen oder löschen (z. B. `#not-for-exam`). Mit `- ohne: #not-for-exam` im Stapel in `Review.md` wird so eine Frage nicht mehr abgefragt, bleibt aber in der VL.
 

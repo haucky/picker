@@ -4,25 +4,27 @@ import { parseFrontmatter, setFrontmatterFields, splitFrontmatter, parseTags } f
 import { inDeck, isConfig, dayToTagDate } from './srs.js';
 
 export const ORDER_FIELD = 'study-order';
-const TODO_RE = /<!!!(.*)$/;
+const TODO_RE = /(^|\s)!!!/;
 const FORBIDDEN_RE = /[\\/:*"<>|?]/;
 const MAX_TITLE = 200;
 
 /* ---------- Todos ---------- */
 
-/** Offene Todos (`<!!! Text bis Zeilenende`) einer Notiz als Texte. */
-export function todos(text) {
-  const out = [];
-  for (const line of text.split(/\r?\n/)) {
-    const m = TODO_RE.exec(line);
-    if (m) out.push(m[1].trim());
-  }
-  return out;
+/** Spalte, ab der eine Zeile ein Todo ist (`!!!` am Zeilenanfang oder nach Leerraum), sonst -1. */
+export function todoStart(line) {
+  const m = TODO_RE.exec(line);
+  return m ? m.index + m[1].length : -1;
 }
 
-/** Spalte, ab der eine Zeile ein Todo ist, sonst -1. */
-export function todoStart(line) {
-  return line.indexOf('<!!!');
+/** Text eines Todos (alles nach `!!!` bis Zeilenende) oder null. */
+export function todoText(line) {
+  const t = todoStart(line);
+  return t < 0 ? null : line.slice(t + 3).trim();
+}
+
+/** Offene Todos (`!!! Text bis Zeilenende`) einer Notiz als Texte. */
+export function todos(text) {
+  return text.split(/\r?\n/).map(todoText).filter((t) => t != null);
 }
 
 /* ---------- Notizen ---------- */
@@ -129,8 +131,11 @@ const QUESTION_RE = /^(.*?\?)((?:[ \t]+#(?=[\p{L}\p{N}_\-/]*[\p{L}_\-])[\p{L}\p{
  * höchstens noch Tags: „Frage? #not-for-exam“) und ist kein Markdown-Element (Liste, Zitat, Überschrift/Tag,
  * Tabelle, Code, Bild, HTML/Todo, Antwort-Datum). `tagsAt` = Spalte, ab der die Tags stehen.
  */
+/** Kann die Zeile vom Anfang her eine Frage sein (nicht eingerückt, kein Markdown-Element)? */
+const isQuestionCandidate = (line) => !/^\s/.test(line) && !/^(?:[-*+>#|`!<~]|::|\d+[.)](?:\s|$))/.test(line);
+
 export function parseQuestion(line) {
-  if (/^\s/.test(line) || /^(?:[-*+>#|`!<~]|::|\d+[.)](?:\s|$))/.test(line)) return null;
+  if (!isQuestionCandidate(line)) return null;
   const m = QUESTION_RE.exec(line);
   if (!m) return null;
   const title = m[1].replace(/\?+$/, '').trim();
@@ -152,13 +157,15 @@ export function buildDoc(notes, base) {
 }
 
 /**
- * Zerlegt das Dokument in Fragen: { items: [{ title, body, line }], errors: [{ line, msg }] }.
- * `line` ist der 0-basierte Zeilenindex. Zeilen in Codeblöcken sind nie Fragen.
+ * Zerlegt das Dokument in Fragen: { items: [{ title, tags, body, line }], errors, warnings }, Fehler und
+ * Warnungen als [{ line, msg }]. `line` ist der 0-basierte Zeilenindex. Zeilen in Codeblöcken sind nie Fragen.
+ * Warnung (speichern geht trotzdem): Zeile sieht nach Frage mit Tags aus, ist aber keine (z. B. „Frage? #a b“).
  */
 export function parseDoc(text) {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const items = [];
   const errors = [];
+  const warnings = [];
   const pre = [];
   let cur = null;
   let fence = null;
@@ -173,6 +180,8 @@ export function parseDoc(text) {
       cur = { title: q.title, tags: q.tags, line: i, lines: [] };
       items.push(cur);
       return;
+    } else if (/\?[ \t]+#/.test(line) && isQuestionCandidate(line)) {
+      warnings.push({ line: i, msg: 'Keine Frage: hinter dem „?“ dürfen nur Tags stehen – die Zeile gehört zum Inhalt der Frage davor' });
     }
     (cur ? cur.lines : pre).push(i);
   });
@@ -192,7 +201,7 @@ export function parseDoc(text) {
     if (seen.has(key)) errors.push({ line: it.line, msg: `Frage kommt doppelt vor (auch Zeile ${seen.get(key) + 1})` });
     else seen.set(key, it.line);
   }
-  return { items, errors };
+  return { items, errors, warnings };
 }
 
 /** Titel von Notizen, die sich nicht verlustfrei als Dokument darstellen lassen (z. B. Inhalt mit Frage-Zeile). */

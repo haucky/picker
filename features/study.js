@@ -3,7 +3,7 @@
 import { h } from './dom.js';
 import { CONFIG_PATH, parseDecks, isConfig, today, dayToGerman } from './srs.js';
 import {
-  todos, todoStart, groupByDay, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
+  todos, todoStart, todoText, groupByDay, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
 } from './studydoc.js';
 
 const DRAFT_PREFIX = 'study-draft:';
@@ -186,10 +186,11 @@ function renderEditor(text) {
   ed.save = h('button', { type: 'button', class: 'btn small', onclick: save }, 'Speichern');
   ed.count = h('span', { class: 'count' });
   ed.errors = h('div', { class: 'notice err', hidden: true });
+  ed.warnings = h('div', { class: 'notice', hidden: true });
   ed.hl = h('div', { class: 'study-hl', 'aria-hidden': 'true' });
   ed.ta = h('textarea', {
     class: 'study-text', spellcheck: 'true', autocapitalize: 'sentences', 'aria-label': 'Fragen und Inhalte',
-    placeholder: 'Erste Frage?\n- Inhalt …\n\nZweite Frage?\n- …\n<!!! Todo bis Zeilenende',
+    placeholder: 'Erste Frage?\n- Inhalt …\n\nZweite Frage? #tag\n- …\n!!! Todo bis Zeilenende',
   });
   ed.ta.value = text;
   ed.ta.addEventListener('input', onInput);
@@ -208,7 +209,7 @@ function renderEditor(text) {
         'gültige Frage-Zeile). Beim Speichern würden sie aufgeteilt: ' + ed.issues.map((t) => `„${t}“`).join(', ') +
         '. Zeile mit „- “ beginnen oder das „?“ am Ende entfernen.')));
   }
-  parts.push(ed.errors, h('div', { class: 'study-wrap' }, ed.hl, ed.ta));
+  parts.push(ed.errors, ed.warnings, h('div', { class: 'study-wrap' }, ed.hl, ed.ta));
   editEl.replaceChildren(...parts);
   update();
 }
@@ -228,16 +229,19 @@ function update() {
   window.scrollTo(0, y);
 
   const text = ed.ta.value;
-  const { items, errors } = parseDoc(text);
+  const { items, errors, warnings } = parseDoc(text);
   const errLines = new Map(errors.map((e) => [e.line, e.msg]));
-  renderHighlights(text, errLines);
+  renderHighlights(text, errLines, new Set(warnings.map((w) => w.line)));
   ed.count.textContent = plural(items.length, 'Frage', 'Fragen');
-  ed.errors.hidden = !errors.length;
-  ed.errors.replaceChildren(...(errors.length ? [
-    h('strong', {}, 'So kann nicht gespeichert werden:'),
-    h('ul', {}, ...errors.sort((a, b) => a.line - b.line).map((e) =>
+  const list = (title, entries) => [
+    h('strong', {}, title),
+    h('ul', {}, ...entries.sort((a, b) => a.line - b.line).map((e) =>
       h('li', {}, h('button', { type: 'button', class: 'link', onclick: () => jumpToLine(e.line) }, `Zeile ${e.line + 1}`), ': ' + e.msg))),
-  ] : []));
+  ];
+  ed.errors.hidden = !errors.length;
+  ed.errors.replaceChildren(...(errors.length ? list('So kann nicht gespeichert werden:', errors) : []));
+  ed.warnings.hidden = !warnings.length;
+  ed.warnings.replaceChildren(...(warnings.length ? list('Hinweis:', warnings) : []));
   ed.save.disabled = busy || text === ed.base;
 }
 
@@ -246,7 +250,7 @@ function update() {
  * Fragen, Tags, Todos, Listenzeichen, Antwort-Daten, Code und Fehler eingefärbt. Keine fetten Schnitte,
  * damit die Zeilen exakt so umbrechen wie im Textfeld.
  */
-function renderHighlights(text, errLines) {
+function renderHighlights(text, errLines, warnLines) {
   const frag = document.createDocumentFragment();
   const lines = text.split('\n');
   let fence = null;
@@ -262,6 +266,7 @@ function renderHighlights(text, errLines) {
       return;
     }
     if (errLines.has(i)) { span.className = 'hl-err'; span.append(line); return; }
+    if (warnLines.has(i)) span.className = 'hl-warn';
     const q = parseQuestion(line);
     if (q) {
       span.append(h('span', { class: 'hl-q' }, line.slice(0, q.tagsAt)));
@@ -294,7 +299,7 @@ function jumpTo({ title, todo }) {
   const lines = ed.ta.value.split('\n');
   let start = lines.findIndex((l) => parseQuestion(l)?.title === title);
   if (start < 0) start = 0;
-  const i = lines.findIndex((l, k) => k >= start && todoStart(l) >= 0 && l.slice(todoStart(l) + 4).trim() === todo);
+  const i = lines.findIndex((l, k) => k >= start && todoText(l) === todo);
   jumpToLine(i >= 0 ? i : start);
 }
 
