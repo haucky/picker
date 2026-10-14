@@ -320,6 +320,43 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
   outline: none;
 }
 
+/* Study */
+.study-list, .study-edit { display: flex; flex-direction: column; gap: 12px; }
+.study-list > .btn { margin-top: 4px; }
+.todo-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 10px;
+  background: rgba(255, 184, 107, .18); color: #ffb86b; font-weight: 600; font-size: .8rem;
+}
+.todo-list { list-style: none; margin: 0; padding: 0; }
+.todo-item {
+  display: flex; flex-direction: column; gap: 2px; width: 100%; min-height: var(--tap); padding: 8px 4px;
+  border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left;
+}
+.todo-item:active { background: var(--surface); }
+.todo-text { color: #ffb86b; overflow-wrap: anywhere; }
+.todo-where { color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; }
+.study-edit .path { margin: 0; overflow-wrap: anywhere; }
+.notice.err { border-color: #6b2622; color: #ffb3ad; }
+.notice.err .link { color: inherit; min-height: 0; }
+body.study-editing .tabs { display: none; }
+body.study-editing .panel { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+.study-wrap { position: relative; }
+.study-hl, .study-text {
+  margin: 0; padding: 8px 4px; border: 0;
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; tab-size: 4; letter-spacing: normal;
+}
+.study-hl { position: absolute; inset: 0; color: transparent; pointer-events: none; overflow: hidden; }
+.study-hl span { border-radius: 3px; }
+.study-hl .hl-q { background: var(--mark); }
+.study-hl .hl-todo { background: rgba(255, 184, 107, .25); }
+.study-hl .hl-err { background: rgba(255, 123, 114, .35); }
+.study-text {
+  position: relative; display: block; width: 100%; min-height: 60vh;
+  background: transparent; color: var(--text); resize: none; outline: none; overflow: hidden;
+}
+.study-text::placeholder { color: var(--muted); }
+
 .toast {
   position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom));
   transform: translateX(-50%);

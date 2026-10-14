@@ -6,6 +6,7 @@ import {
   CONFIG_PATH, RESPONSES, parseDecks, buildCards, srState, nextState, writeState, dueDateCounts,
   formatInterval, setReviewed, seedDay, splitAnswers, appendAnswer, cardBody, today, isConfig, FIXED_INTERVALS,
 } from './srs.js';
+import { studyOrder } from './studydoc.js';
 
 const RESPONSE_LABEL = { hard: 'Schwer', good: 'Gut', easy: 'Leicht' };
 const FIXED_LABEL = { daily: 'täglich', weekly: 'wöchentlich', monthly: 'monatlich' };
@@ -14,12 +15,12 @@ const FIXED = 'fixed';
 
 const CONFIG_TEMPLATE = `# Review
 
-Jede Überschrift ist ein Stapel. Eine Notiz gehört dazu, wenn sie einen der Tags hinter „tags:“ hat
+Jede Überschrift ist ein Stapel. Eine Notiz gehört dazu, wenn sie den Tag hinter „tag:“ hat
 (Untertags zählen mit) und keinen hinter „ohne:“. Notizen mit festem Intervall (review/daily, weekly,
 monthly) werden nur nach ihrem festen Intervall wiederholt.
 
 ## TILs
-- tags: #life/diary
+- tag: #life/diary
 `;
 
 let ui, core, root;
@@ -46,11 +47,17 @@ function cardsFor(key, cards) {
 
 const isDue = (c) => !c.isNew && c.overdue >= 0;
 
-/** Fällige zuerst (am längsten überfällig oben), danach neue Karten (älteste Notiz zuerst). */
+/**
+ * Fällige zuerst (am längsten überfällig oben), danach neue Karten: älteste Notiz (VL) zuerst,
+ * innerhalb eines Datums in der Reihenfolge aus dem Study-Editor (study-order).
+ */
 function queueOf(cards) {
   const time = (c) => { const n = core.get(c.path); return n ? n.date ?? n.mtime : 0; };
+  const order = (c) => { const n = core.get(c.path); return n ? studyOrder(n.text) : Infinity; };
   const due = cards.filter(isDue).sort((a, b) => b.overdue - a.overdue || a.path.localeCompare(b.path, 'de'));
-  const fresh = cards.filter((c) => c.isNew).sort((a, b) => time(a) - time(b) || a.path.localeCompare(b.path, 'de'));
+  const fresh = cards.filter((c) => c.isNew).map((c) => ({ c, t: time(c), o: order(c) }))
+    .sort((a, b) => a.t - b.t || (a.o - b.o || 0) || a.c.path.localeCompare(b.c.path, 'de'))
+    .map((x) => x.c);
   return [...due, ...fresh];
 }
 
@@ -73,7 +80,7 @@ function renderOverview() {
   const entries = [];
   const fixedCount = cards.filter((c) => c.kind === 'fixed').length;
   entries.push({ key: ALL, title: 'Alle' });
-  ds.forEach((d, i) => entries.push({ key: i, title: d.name, sub: d.tags.map((t) => '#' + t).join(' ') }));
+  ds.forEach((d, i) => entries.push({ key: i, title: d.name, sub: '#' + d.tag }));
   if (fixedCount) entries.push({ key: FIXED, title: 'Feste Intervalle', sub: '#review/daily · weekly · monthly' });
 
   children.push(h('ul', { class: 'decks' }, ...entries.map((e) => {
@@ -108,11 +115,11 @@ function renderOverview() {
     children.push(h('div', { class: 'notice' },
       h('strong', {}, `Keine ${CONFIG_PATH} im Vault.`),
       h('p', {}, `Welche Notizen per Spaced Repetition wiederholt werden, steht in ${CONFIG_PATH} im obersten Ordner ` +
-        'des Vaults. Jede Überschrift ist ein Stapel, darunter „- tags: #…“ und optional „- ohne: #…“.'),
+        'des Vaults. Jede Überschrift ist ein Stapel, darunter „- tag: #…“ und optional „- ohne: #…“.'),
       h('button', { type: 'button', class: 'btn small', onclick: createConfig }, `${CONFIG_PATH} anlegen`)));
   } else {
     if (!ds.length) {
-      children.push(h('p', { class: 'hint left' }, `${CONFIG_PATH} enthält noch keinen Stapel mit „tags:“.`));
+      children.push(h('p', { class: 'hint left' }, `${CONFIG_PATH} enthält noch keinen Stapel mit „tag:“.`));
     }
     children.push(h('button', { type: 'button', class: 'link', onclick: () => ui.openNote(cfg.path) }, `${CONFIG_PATH} bearbeiten`));
   }

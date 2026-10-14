@@ -162,28 +162,30 @@ export function setReviewed(text, day) {
 /* ---------- Review.md ---------- */
 
 /**
- * Stapel aus Review.md: jede Überschrift ist ein Stapel, darunter Zeilen `tags: #a #b` und `ohne: #c`.
- * Gibt [{ name, tags: [klein], without: [klein] }] zurück (nur Stapel mit mindestens einem Tag).
+ * Stapel aus Review.md: jede Überschrift ist ein Stapel, darunter `tag: #a` (genau ein Tag; `tags:` geht auch,
+ * dann zählt der erste) und optional `ohne: #c #d`.
+ * Gibt [{ name, tag (Originalschreibweise), without: [klein] }] zurück (nur Stapel mit Tag).
  */
 export function parseDecks(text) {
   const decks = [];
   let cur = null;
   for (const line of splitFrontmatter(text).body.split(/\r?\n/)) {
     const hm = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(line);
-    if (hm) { cur = { name: hm[1], tags: [], without: [] }; decks.push(cur); continue; }
-    const km = /^\s*(?:[-*+]\s+)?(tags|ohne)\s*:\s*(.*)$/i.exec(line);
+    if (hm) { cur = { name: hm[1], tag: null, without: [] }; decks.push(cur); continue; }
+    const km = /^\s*(?:[-*+]\s+)?(tags?|ohne)\s*:\s*(.*)$/i.exec(line);
     if (!km || !cur) continue;
-    const tags = parseTags(' ' + km[2]).map((t) => t.toLowerCase());
-    (km[1].toLowerCase() === 'tags' ? cur.tags : cur.without).push(...tags);
+    const tags = parseTags(' ' + km[2]);
+    if (km[1].toLowerCase() === 'ohne') cur.without.push(...tags.map((t) => t.toLowerCase()));
+    else cur.tag ??= tags[0] || null;
   }
-  return decks.filter((d) => d.tags.length);
+  return decks.filter((d) => d.tag);
 }
 
 const hasTag = (tagsLower, wanted) => tagsLower.some((t) => wanted.some((w) => t === w || t.startsWith(w + '/')));
 
 /** Gehört die Notiz zum Stapel? */
 export function inDeck(note, deck) {
-  return hasTag(note.tagsLower, deck.tags) && !hasTag(note.tagsLower, deck.without);
+  return hasTag(note.tagsLower, [deck.tag.toLowerCase()]) && !hasTag(note.tagsLower, deck.without);
 }
 
 export const isConfig = (path) => path.toLowerCase() === CONFIG_PATH.toLowerCase();

@@ -453,6 +453,27 @@ export const core = {
     this.forget(path);
   },
 
+  /** Verschiebt eine Notiz in den Papierkorb von Obsidian (.trash/ im Vault); Namenskonflikte dort bekommen „ 1“, „ 2“ … */
+  async trash(path) {
+    await this.requireAccess();
+    const text = await (await (await this.handle(path)).getFile()).text();
+    const dir = await this.vault.getDirectoryHandle('.trash', { create: true });
+    const name = path.split('/').at(-1);
+    const base = name.replace(/\.md$/i, '');
+    let target = name;
+    for (let i = 1; ; i++) {
+      try {
+        await dir.getFileHandle(target);
+        target = `${base} ${i}.md`;
+      } catch (err) {
+        if (err.name !== 'NotFoundError') throw err;
+        break;
+      }
+    }
+    await write(await dir.getFileHandle(target, { create: true }), text);
+    await this.remove(path);
+  },
+
   /* ----- Anhänge (z. B. Bilder) ----- */
 
   /**

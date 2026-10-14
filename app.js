@@ -2,11 +2,12 @@
 import { core } from './core.js';
 import search from './features/search.js';
 import tagging from './features/tagging.js';
+import study from './features/study.js';
 import review from './features/review.js';
 import syncTab from './features/sync.js';
 
 // Neue Feature-Module hier eintragen: { id, title, mount(root, ui), show?() }
-const FEATURES = [search, tagging, review, syncTab];
+const FEATURES = [search, tagging, study, review, syncTab];
 
 const $ = (id) => document.getElementById(id);
 const el = {
