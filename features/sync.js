@@ -1,6 +1,8 @@
-// Feature: Stand des Abgleichs, manueller (vollständiger) Abgleich, Diagnose des Obsidian-Plugin-Logs.
+// Feature „Settings“: Name für den Export, Darstellung, Stand des Abgleichs, manueller (vollständiger) Abgleich,
+// Diagnose des Obsidian-Plugin-Logs.
 import { h } from './dom.js';
 import { THEMES, getTheme, setTheme } from './theme.js';
+import { exportName, setExportName } from './export.js';
 
 const SHOW_ENTRIES = 30;
 const OPS = { create: 'neu', modify: 'geändert', delete: 'gelöscht', rename: 'umbenannt', start: 'Obsidian gestartet' };
@@ -78,6 +80,13 @@ function themeRow() {
   return row;
 }
 
+function nameInput() {
+  return h('input', {
+    type: 'text', class: 'filter settings-name', value: exportName(), placeholder: 'Vor- und Nachname',
+    autocomplete: 'name', 'aria-label': 'Name für den Export', oninput: (e) => setExportName(e.target.value),
+  });
+}
+
 async function run(full) {
   if (!(await core.hasPermission(true))) return ui.toast('Zugriff auf den Vault wurde nicht erlaubt.', 4000);
   await core.sync({ full });
@@ -87,7 +96,7 @@ async function run(full) {
 
 export default {
   id: 'sync',
-  title: 'Sync',
+  title: 'Settings',
 
   mount(_root, _ui) {
     root = _root;
@@ -98,7 +107,14 @@ export default {
     btnSync = h('button', { type: 'button', class: 'btn', onclick: () => run(false) }, 'Jetzt abgleichen');
     btnFull = h('button', { type: 'button', class: 'btn', onclick: () => run(true) }, 'Komplett abgleichen');
     root.append(
-      h('header', { class: 'bar' }, h('h1', {}, 'Abgleich')),
+      h('header', { class: 'bar' }, h('h1', {}, 'Settings')),
+      h('h2', { class: 'section' }, 'Name'),
+      nameInput(),
+      h('p', { class: 'hint left' }, 'Steht beim Export einer VL (Study → VL → PDF) unter dem Titel.'),
+      h('h2', { class: 'section' }, 'Darstellung'),
+      themeRow(),
+      h('p', { class: 'hint left' }, 'Solarized hell/dunkel. „Automatisch“ folgt der Einstellung des Handys.'),
+      h('h2', { class: 'section' }, 'Abgleich'),
       info,
       h('div', { class: 'btn-row' }, btnSync, btnFull),
       h('p', { class: 'hint left' },
@@ -107,9 +123,6 @@ export default {
         'und spätestens alle 3 Tage.'),
       h('h2', { class: 'section' }, 'Plugin-Log'),
       logEl,
-      h('h2', { class: 'section' }, 'Darstellung'),
-      themeRow(),
-      h('p', { class: 'hint left' }, 'Solarized hell/dunkel. „Automatisch“ folgt der Einstellung des Handys.'),
     );
     core.on('status', () => { if (!root.hidden) renderInfo(); });
   },

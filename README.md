@@ -13,7 +13,7 @@ Minimale PWA, um auf dem Android-Handy einen lokalen Obsidian-Vault schnell zu d
 ## Benutzung
 
 - **Vault öffnen** tippen und im Ordner-Dialog **nur den Vault-Ordner** auswählen (den Ordner, der `.obsidian/` enthält) – nicht „Interner Speicher“, „Documents“ o. Ä. Die App bekommt Lese- *und Schreib*zugriff auf genau diesen Ordner samt Unterordnern; gib ihr nicht mehr als nötig.
-Unten wechselst du zwischen den Modulen **Suche**, **Taggen**, **Study**, **Review** und **Sync**.
+Unten wechselst du zwischen den Modulen **Suche**, **Taggen**, **Study**, **Review** und **Settings**.
 
 ### Suche
 
@@ -62,6 +62,7 @@ Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.m
 
   Eine umformulierte Frage ist also eine neue Notiz (der SR-Stand der alten geht verloren). Die Reihenfolge im Text wird als `study-order` in der Frontmatter gespeichert. Wurden Dateien seit dem Öffnen außerhalb geändert (z. B. per Obsidian Sync), fragt die App vor dem Überschreiben. Ungespeicherter Text bleibt als Entwurf im Browser erhalten und wird beim nächsten Öffnen der VL wiederhergestellt.
 - Nicht erlaubt (Speichern wird verhindert): Text vor der ersten Frage, doppelte Fragen, Zeichen, die in Dateinamen verboten sind (`\ / : * " < > |` und `?` mitten in der Frage), Fragen, deren Datei es woanders im Vault schon gibt.
+- **PDF** (im VL-Editor oben) exportiert die VL so, wie sie gerade im Editor steht, als schlichtes Dokument im LaTeX-Stil (Schrift Latin Modern, A4) – z. B. um sie anderen Studis zu geben. Es öffnet sich der Druckdialog, dort **Als PDF speichern** wählen. Oben stehen Stapel-Name, dein Name (aus **Settings**) und das Datum der VL, darunter jede Frage nummeriert mit ihrem Inhalt und Bildern (`small` = drei nebeneinander, `normal` ≈ ¾ Seitenbreite, `big` = volle Breite). Eigene Antworten stehen mit drin („Antwort vom …“). Todos (`!!!`) und die Tags hinter den Fragen lässt der Export weg.
 
 ### Review
 
@@ -118,7 +119,7 @@ CodeMirror liegt fertig gebündelt in `vendor/codemirror.js` (die App braucht we
 
 ### Darstellung
 
-Farbschema [Solarized](https://ethanschoonover.com/solarized/) hell und dunkel. Standard ist „Automatisch“ (folgt der Einstellung des Handys); umstellen unter **Sync → Darstellung**.
+Farbschema [Solarized](https://ethanschoonover.com/solarized/) hell und dunkel. Standard ist „Automatisch“ (folgt der Einstellung des Handys); umstellen unter **Settings → Darstellung**.
 
 ### Zwischenspeicher
 
@@ -130,11 +131,12 @@ Damit die Suche schnell ist, hält die App eine Kopie aller Notizen im Browser-S
 - Fragt Chrome nach einem Neustart erneut nach der Berechtigung, ist die Suche trotzdem nutzbar; beim Antippen eines Treffers (oder über „Zugriff erlauben“) wird der Zugriff erneut erteilt.
 - Werden die Website-Daten in Chrome gelöscht, baut die App den Zwischenspeicher einfach neu auf.
 
-### Sync
+### Settings
 
-- Zeigt, wann und wie zuletzt abgeglichen wurde, mit **Jetzt abgleichen** und **Komplett abgleichen**.
+- **Name:** steht beim PDF-Export einer VL unter dem Titel (wird nur im Browser gespeichert).
+- **Darstellung** (Automatisch / Hell / Dunkel).
+- **Abgleich:** wann und wie zuletzt abgeglichen wurde, mit **Jetzt abgleichen** und **Komplett abgleichen**.
 - Darunter die letzten Einträge des Plugin-Logs (zur Kontrolle, ob das Plugin läuft).
-- Ganz unten: **Darstellung** (Automatisch / Hell / Dunkel).
 
 ## Obsidian-Plugin „Picker Changelog“
 
@@ -145,7 +147,7 @@ Das Plugin in `obsidian-plugin/picker-changelog/` schreibt jede Änderung an Not
 1. Auf dem Desktop den Ordner `picker-changelog` (mit `manifest.json` und `main.js`) nach `<Vault>/.obsidian/plugins/` kopieren.
 2. Warten, bis Obsidian Sync ihn aufs Handy übertragen hat.
 3. Auf dem Handy: **Einstellungen → Community-Plugins** → ggf. den eingeschränkten Modus ausschalten → „Picker Changelog“ aktivieren.
-4. Kontrolle: Im Tab **Sync** der PWA erscheint unter „Plugin-Log“ ein Eintrag „Obsidian gestartet“.
+4. Kontrolle: Im Tab **Settings** der PWA erscheint unter „Plugin-Log“ ein Eintrag „Obsidian gestartet“.
 
 **Verhalten:**
 

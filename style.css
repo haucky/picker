@@ -22,7 +22,7 @@
   --tap: 48px;
   color-scheme: dark;
 }
-/* Solarized – hell (System-Einstellung oder manuell in „Sync → Darstellung“) */
+/* Solarized – hell (System-Einstellung oder manuell in „Settings → Darstellung“) */
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --bg: #fdf6e3; --surface: #eee8d5; --line: #e2dbc6;
@@ -443,3 +443,65 @@ img.img-big { max-width: 100%; }
   position: fixed; bottom: calc(12px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
   padding: 4px 12px; border-radius: 12px; background: rgba(0, 0, 0, .5); color: #fff; font-size: .9rem;
 }
+
+/* Settings */
+.settings-name { margin: 4px 0; }
+
+/* Export einer VL: Druckansicht im Stil eines LaTeX-Dokuments (wie latex.css), nur beim Drucken sichtbar */
+@font-face { font-family: "LM Roman"; src: url(vendor/fonts/lmroman10-regular.woff2) format("woff2"); font-weight: normal; font-style: normal; }
+@font-face { font-family: "LM Roman"; src: url(vendor/fonts/lmroman10-bold.woff2) format("woff2"); font-weight: bold; font-style: normal; }
+@font-face { font-family: "LM Roman"; src: url(vendor/fonts/lmroman10-italic.woff2) format("woff2"); font-weight: normal; font-style: italic; }
+@font-face { font-family: "LM Roman"; src: url(vendor/fonts/lmroman10-bolditalic.woff2) format("woff2"); font-weight: bold; font-style: italic; }
+@font-face { font-family: "LM Mono"; src: url(vendor/fonts/lmmono10-regular.woff2) format("woff2"); }
+
+.print-doc { display: none; }
+@page {
+  size: A4;
+  margin: 25mm 25mm 22mm;
+  @bottom-center { content: counter(page); font: 10pt "LM Roman", serif; color: #000; }
+}
+@media print {
+  body.printing { background: #fff; }
+  body.printing > :not(.print-doc) { display: none !important; }
+  body.printing .print-doc { display: block; }
+}
+.print-doc {
+  color: #000; background: #fff;
+  font: 11pt/1.45 "LM Roman", "Latin Modern Roman", "Computer Modern Serif", Georgia, serif;
+  text-align: justify; hyphens: auto; -webkit-hyphens: auto;
+  counter-reset: q;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.print-title { text-align: center; margin: 0 0 2.2em; }
+.print-title h1 { font-size: 20pt; font-weight: normal; line-height: 1.2; margin: 0 0 .7em; }
+.print-author, .print-date { font-size: 12pt; margin: .3em 0; }
+.print-q { counter-increment: q; }
+.print-q h2 { font-size: 13pt; font-weight: bold; text-align: left; margin: 1.6em 0 .4em; break-after: avoid; page-break-after: avoid; }
+.print-q h2::before { content: counter(q); display: inline-block; min-width: 1.8em; }
+.print-doc .md { overflow-wrap: normal; }
+.print-doc .md p, .print-doc .md ul, .print-doc .md ol, .print-doc .md pre, .print-doc .md blockquote, .print-doc .md .table-wrap { margin: .45em 0; }
+.print-doc .md ul, .print-doc .md ol { padding-left: 1.6em; }
+.print-doc .md li { margin: .1em 0; }
+.print-doc .md h3, .print-doc .md h4, .print-doc .md h5, .print-doc .md h6 { font-size: 11pt; margin: 1em 0 .3em; break-after: avoid; }
+.print-doc .md code, .print-doc .md pre { font-family: "LM Mono", "Latin Modern Mono", ui-monospace, monospace; font-size: 10pt; background: none; border: 0; padding: 0; color: #000; }
+.print-doc .md pre { padding: .2em 0 .2em 1.6em; white-space: pre-wrap; break-inside: avoid; }
+.print-doc .md pre code { white-space: pre-wrap; }
+.print-doc .md blockquote { border-left: 0; margin: .45em 2em; padding: 0; color: #000; font-style: italic; }
+.print-doc .md blockquote.callout { border: .5pt solid #000; padding: .3em .7em; font-style: normal; }
+.print-doc .md .callout-title { color: #000; }
+.print-doc .md hr { border-top: .5pt solid #000; }
+.print-doc .md a, .print-doc .md .wikilink { color: #000; text-decoration: none; }
+.print-doc .md .md-tag { color: #555; }
+.print-doc .md mark { background: #e8e8e8; color: inherit; }
+.print-doc .md table { border-collapse: collapse; font-size: 10pt; margin: 0 auto; border-top: 1pt solid #000; border-bottom: 1pt solid #000; }
+.print-doc .md th { border: 0; border-bottom: .5pt solid #000; padding: .2em .6em; }
+.print-doc .md td { border: 0; padding: .2em .6em; }
+.print-doc .md li.task input { accent-color: #000; }
+.print-answer-date { font-style: italic; margin-top: .8em !important; }
+/* Bilder groß genug für Papier: small = drei pro Zeile, normal ≈ ¾ Seitenbreite, big = volle Breite */
+.print-doc .md .md-img { border-radius: 0; margin: .2em .4em .2em 0; break-inside: avoid; }
+.print-doc img.img-sized { max-width: 100%; cursor: default; }
+.print-doc img.img-small { width: 31.5%; max-width: 31.5%; max-height: none; height: auto; }
+.print-doc img.img-normal { max-width: 75%; max-height: 11cm; }
+.print-doc img.img-big { width: 100%; max-height: 22cm; object-fit: contain; }
+.print-doc .md-img-ph { display: none; }

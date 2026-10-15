@@ -2,6 +2,7 @@
 // Fließtext-Dokument („Frage?“-Zeile + Inhalt). Speichern ändert, legt an und verschiebt in den Papierkorb.
 import { h } from './dom.js';
 import { createEditor } from './editor.js';
+import { printVL, exportName } from './export.js';
 import { CONFIG_PATH, parseDecks, isConfig, today, dayToGerman } from './srs.js';
 import {
   todos, todoStart, todoText, groupByDay, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
@@ -185,6 +186,7 @@ async function openVL(deck, day, focus) {
 function renderEditor(text) {
   const title = h('h1', { class: 'ellipsis' }, `${ed.deck.name} · ${dayLabel(ed.day)}`);
   ed.save = h('button', { type: 'button', class: 'btn small', onclick: save }, 'Speichern');
+  const pdf = h('button', { type: 'button', class: 'btn small', onclick: exportPDF, title: 'Als PDF exportieren (Drucken → Als PDF speichern)' }, 'PDF');
   ed.count = h('span', { class: 'count' });
   ed.errors = h('div', { class: 'notice err', hidden: true });
   ed.warnings = h('div', { class: 'notice', hidden: true });
@@ -194,7 +196,7 @@ function renderEditor(text) {
   const parts = [
     h('header', { class: 'bar' },
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zurück', onclick: leave }, '←'),
-      title, ed.count, ed.save),
+      title, ed.count, pdf, ed.save),
     h('p', { class: 'path' }, ...info),
   ];
   if (ed.issues.length) {
@@ -300,6 +302,23 @@ function leave() {
   } else {
     deckIndex = null;
     renderList();
+  }
+}
+
+/* ---------- Export ---------- */
+
+/** Druckansicht der VL im aktuellen Stand des Editors (auch ungespeichert) → „Als PDF speichern“. */
+async function exportPDF() {
+  if (!ed) return;
+  if (!parseDoc(ed.cm.value).items.length) return ui.toast('Keine Fragen zum Exportieren.');
+  if (!exportName()) ui.toast('Tipp: Deinen Namen für den Export unter Settings eintragen.', 4000);
+  try {
+    await printVL({
+      deck: ed.deck, day: ed.day, text: ed.cm.value,
+      resolveImage: (link) => ui.resolveImage(link, ed.folder ? ed.folder + '/_.md' : '_.md'),
+    });
+  } catch (err) {
+    ui.toast('Export fehlgeschlagen: ' + err.message, 4000);
   }
 }
 
