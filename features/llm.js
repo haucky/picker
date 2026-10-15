@@ -5,10 +5,26 @@
 
 const KEY_STORE = 'tinfoil-api-key';
 
-/** Modelle (IDs aus dem Tinfoil-Katalog, der sich öfter ändert – bei Fehlern „model not found“ hier anpassen). */
-export const MODELS = {
-  fast: 'gemma4-31b', // schnell, ohne Thinking (Gemma denkt nur, wenn es im System-Prompt eingeschaltet wird)
+/**
+ * Modell pro Zweck (IDs aus dem Tinfoil-Katalog, der sich öfter ändert). In Settings änderbar; die Liste der
+ * aktuell verfügbaren Modelle liefert listModels().
+ */
+export const DEFAULT_MODELS = {
+  correct: 'gemma4-31b',          // Korrekturvorschläge: schnell, ohne Thinking
+  prompt: 'deepseek-v4-1-flash',  // Prompts auf markierten Text: stärker, trotzdem schnell
 };
+const MODEL_STORE = 'ai-model:';
+
+export function modelFor(purpose) {
+  try { return localStorage.getItem(MODEL_STORE + purpose) || DEFAULT_MODELS[purpose]; } catch { return DEFAULT_MODELS[purpose]; }
+}
+
+export function setModel(purpose, id) {
+  try {
+    if (id.trim() && id.trim() !== DEFAULT_MODELS[purpose]) localStorage.setItem(MODEL_STORE + purpose, id.trim());
+    else localStorage.removeItem(MODEL_STORE + purpose);
+  } catch { /* egal */ }
+}
 
 export class LLMError extends Error {
   constructor(code, message) { super(message || code); this.name = 'LLMError'; this.code = code; }
@@ -64,18 +80,47 @@ function abortable(promise, signal) {
 
 /**
  * Eine Chat-Anfrage → Antworttext.
- * opts: { system, user | messages, model (Standard MODELS.fast), maxTokens, temperature, timeout (ms), signal }
+ * opts: { system, user | messages, model (ID) | purpose (siehe DEFAULT_MODELS), maxTokens, temperature, timeout (ms),
+ *         signal, onDelta(stück, bisher) – dann wird gestreamt }
  * Fehler: LLMError('no-key'|'offline'), DOMException AbortError (signal) bzw. TimeoutError (timeout), sonst SDK-/API-Fehler.
  */
-export async function chat({ system, user, messages, model = MODELS.fast, maxTokens = 256, temperature = 0.2, timeout = 0, signal } = {}) {
+export async function chat({
+  system, user, messages, purpose = 'correct', model = modelFor(purpose), maxTokens = 256, temperature = 0.2, timeout = 0,
+  signal, onDelta,
+} = {}) {
   if (!navigator.onLine) throw new LLMError('offline', 'Offline');
   const signals = [signal, timeout ? AbortSignal.timeout(timeout) : null].filter(Boolean);
   const sig = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
   const c = await abortable(getClient(), sig);
   const msgs = messages || [system && { role: 'system', content: system }, { role: 'user', content: user }].filter(Boolean);
-  const res = await abortable(
-    c.chat.completions.create({ model, messages: msgs, max_tokens: maxTokens, temperature }, { signal: sig }), sig);
+  const body = { model, messages: msgs, max_tokens: maxTokens, temperature };
+  if (onDelta) {
+    let out = '';
+    try {
+      const stream = await abortable(c.chat.completions.create({ ...body, stream: true }, { signal: sig }), sig);
+      for await (const chunk of stream) {
+        const d = chunk.choices?.[0]?.delta?.content;
+        if (d) { out += d; onDelta(d, out); }
+      }
+      return out;
+    } catch (err) {
+      if (sig?.aborted) throw sig.reason;
+      if (out) throw err;
+      // Streaming ging gar nicht: einmal ohne versuchen
+    }
+    const text = await chat({ system, user, messages, model, maxTokens, temperature, signal: sig });
+    onDelta(text, text);
+    return text;
+  }
+  const res = await abortable(c.chat.completions.create(body, { signal: sig }), sig);
   return res.choices?.[0]?.message?.content ?? '';
+}
+
+/** IDs der Modelle, die Tinfoil gerade anbietet (sortiert). */
+export async function listModels({ signal } = {}) {
+  const c = await abortable(getClient(), signal);
+  const page = await abortable(c.models.list(), signal);
+  return (page.data || []).map((m) => m.id).sort();
 }
 
 /** Erstes JSON-Array bzw. -Objekt aus einer Modellantwort (auch in ```json-Blöcken oder mit Text drumherum), sonst null. */

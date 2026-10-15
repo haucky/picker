@@ -9,6 +9,7 @@ import { applyTheme } from './features/theme.js';
 import { createEditor } from './features/editor.js';
 import { createSpell } from './features/spell.js';
 import { aiCorrect } from './features/aicorrect.js';
+import { createPrompts } from './features/prompts.js';
 
 // Neue Feature-Module hier eintragen: { id, title, mount(root, ui), show?() }
 const FEATURES = [search, tagging, study, review, syncTab];
@@ -134,8 +135,9 @@ const desktop = matchMedia('(hover: hover) and (pointer: fine)').matches;
 const spell = desktop ? createSpell({ notes: () => core.list() }) : null;
 if (spell) core.on('change', () => spell.invalidate());
 const ai = desktop ? aiCorrect : null; // KI-Vorschläge per Doppelklick, ebenfalls nur am Computer
+const prompts = desktop ? createPrompts({ notes: () => core.list() }) : null; // Prompt auf markierten Text
 
-const ui = { core, toast, openNote, openLink, resolveImage, saveImage, spell, ai, pickVault };
+const ui = { core, toast, openNote, openLink, resolveImage, saveImage, spell, ai, prompts, pickVault };
 
 /* ---------- Editor ---------- */
 
@@ -232,6 +234,7 @@ async function init() {
     saveImage,
     spell,
     ai,
+    prompt: prompts,
   });
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's' && current) { e.preventDefault(); save(); }

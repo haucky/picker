@@ -3,7 +3,8 @@
 import { h } from './dom.js';
 import { THEMES, getTheme, setTheme } from './theme.js';
 import { exportName, setExportName } from './export.js';
-import { apiKey, setApiKey, chat, MODELS } from './llm.js';
+import { apiKey, setApiKey, chat, modelFor, setModel, DEFAULT_MODELS, listModels } from './llm.js';
+import { PROMPTS_PATH, DEFAULT_PROMPTS, defaultPromptsFile, parsePrompts } from './prompts.js';
 
 const SHOW_ENTRIES = 30;
 const OPS = { create: 'neu', modify: 'geändert', delete: 'gelöscht', rename: 'umbenannt', start: 'Obsidian gestartet' };
@@ -88,6 +89,8 @@ function nameInput() {
   });
 }
 
+let modelList, promptsInfo;
+
 function aiRow() {
   const input = h('input', {
     type: 'password', class: 'filter settings-name', value: apiKey(), placeholder: 'Tinfoil-API-Key', autocomplete: 'off',
@@ -97,8 +100,10 @@ function aiRow() {
     if (!apiKey()) return ui.toast('Erst einen Key eintragen.');
     test.disabled = true;
     try {
-      await chat({ user: 'Antworte nur mit: OK', maxTokens: 5, timeout: 30000 });
-      ui.toast(`Verbunden ✓ Enclave geprüft (${MODELS.fast})`, 4000);
+      const models = [...new Set(Object.keys(DEFAULT_MODELS).map(modelFor))];
+      for (const model of models) await chat({ user: 'Antworte nur mit: OK', model, maxTokens: 5, timeout: 30000 });
+      ui.toast(`Verbunden ✓ Enclave geprüft (${models.join(', ')})`, 4000);
+      loadModels();
     } catch (err) {
       ui.toast('Fehlgeschlagen: ' + (err.message || err.name), 6000);
     } finally {
@@ -106,6 +111,44 @@ function aiRow() {
     }
   } }, 'Testen');
   return h('div', { class: 'settings-key' }, input, test);
+}
+
+function modelRow(purpose, label) {
+  return h('label', { class: 'settings-model' },
+    h('span', { class: 'kv-label' }, label),
+    h('input', {
+      type: 'text', class: 'filter', list: 'ai-models', value: modelFor(purpose), placeholder: DEFAULT_MODELS[purpose],
+      autocomplete: 'off', spellcheck: 'false', onchange: (e) => { setModel(purpose, e.target.value); e.target.value = modelFor(purpose); },
+    }));
+}
+
+/** Verfügbare Modelle als Vorschläge für die Modell-Felder (einmal pro Sitzung, nur mit Key und online). */
+let modelsLoaded = false;
+function loadModels() {
+  if (modelsLoaded || !apiKey() || !navigator.onLine) return;
+  modelsLoaded = true;
+  listModels().then((ids) => modelList.replaceChildren(...ids.map((id) => h('option', { value: id }))),
+    () => { modelsLoaded = false; });
+}
+
+function renderPromptsInfo() {
+  const file = core.list().find((n) => n.path.toLowerCase() === PROMPTS_PATH.toLowerCase());
+  const list = file ? parsePrompts(file.text) : [];
+  const names = (file && list.length ? list : DEFAULT_PROMPTS).map((p) => p.name).join(', ');
+  promptsInfo.replaceChildren(...[
+    h('p', { class: 'hint left' }, file
+      ? `${PROMPTS_PATH}: ${list.length ? names : 'keine Abkürzungen gefunden – Standard: ' + names}`
+      : `Keine ${PROMPTS_PATH} im Vault – Standard-Abkürzungen: ${names}.`),
+    file ? null : h('button', { type: 'button', class: 'btn small', onclick: async () => {
+      try {
+        await core.create(PROMPTS_PATH, defaultPromptsFile());
+        ui.toast(`${PROMPTS_PATH} angelegt ✓`);
+      } catch (err) {
+        ui.toast('Konnte nicht anlegen: ' + err.message, 4000);
+      }
+      renderPromptsInfo();
+    } }, `${PROMPTS_PATH} anlegen`),
+  ].filter(Boolean));
 }
 
 async function run(full) {
@@ -124,6 +167,8 @@ export default {
     ui = _ui;
     core = ui.core;
     info = h('div', { class: 'kv' });
+    modelList = h('datalist', { id: 'ai-models' });
+    promptsInfo = h('div', {});
     logEl = h('div', {});
     btnSync = h('button', { type: 'button', class: 'btn', onclick: () => run(false) }, 'Jetzt abgleichen');
     btnFull = h('button', { type: 'button', class: 'btn', onclick: () => run(true) }, 'Komplett abgleichen');
@@ -132,12 +177,18 @@ export default {
       h('h2', { class: 'section' }, 'Name'),
       nameInput(),
       h('p', { class: 'hint left' }, 'Steht beim Export einer VL (Study → VL → PDF) unter dem Titel.'),
-      h('h2', { class: 'section' }, 'KI-Korrektur'),
+      h('h2', { class: 'section' }, 'KI'),
       aiRow(),
       h('p', { class: 'hint left' },
-        'Nur am Computer: Doppelklick auf ein Wort zeigt Korrekturvorschläge aus dem Wörterbuch und vom Sprachmodell. ' +
-        'Läuft über Tinfoil (verschlüsselt, Enclave wird geprüft); gesendet wird nur der Satz um das Wort. ' +
-        'Der Key bleibt in diesem Browser. Key unter tinfoil.sh anlegen.'),
+        'Für alle KI-Funktionen (nur am Computer). Läuft über Tinfoil: verschlüsselt, die Enclave wird vor jeder Sitzung ' +
+        'geprüft. Der Key bleibt in diesem Browser. Key unter tinfoil.sh anlegen.'),
+      modelRow('correct', 'Modell Korrektur'),
+      modelRow('prompt', 'Modell Prompts'),
+      modelList,
+      h('p', { class: 'hint left' },
+        'Korrektur: Doppelklick auf ein Wort (schnelles Modell ohne Thinking). Prompts: Text markieren, Prompt oder ' +
+        'Abkürzung eintippen (Strg/Cmd+K), Enter. Leeres Feld = Standard.'),
+      promptsInfo,
       h('h2', { class: 'section' }, 'Darstellung'),
       themeRow(),
       h('p', { class: 'hint left' }, 'Solarized hell/dunkel. „Automatisch“ folgt der Einstellung des Handys.'),
@@ -156,6 +207,8 @@ export default {
 
   show() {
     renderInfo();
+    renderPromptsInfo();
+    loadModels();
     renderLog();
   },
 };

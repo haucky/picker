@@ -1,6 +1,6 @@
 // KI-Korrekturvorschläge für ein Wort im Satz (Doppelklick im Editor, nur am Computer), über features/llm.js.
 // Nur der Satz um das Wort geht an das Modell, nicht das Dokument. Ergebnisse werden im Speicher gecacht.
-import { chat, extractJSON, llmAvailable, warmUp } from './llm.js';
+import { chat, extractJSON, llmAvailable, warmUp, modelFor } from './llm.js';
 
 const COUNT = 5;
 const TIMEOUT = 5000;
@@ -8,7 +8,7 @@ const MAX_CONTEXT = 400;
 const SYSTEM = 'Du bist ein Korrekturassistent für deutsche Texte. Gib genau 5 Korrekturvorschläge für das markierte ' +
   'Wort im gegebenen Kontext zurück, bester zuerst. Antworte ausschließlich als JSON-Array von Strings.';
 
-const cache = new Map(); // wort \0 satz → [Vorschläge]
+const cache = new Map(); // modell \0 wort \0 satz → [Vorschläge]
 
 /**
  * Satz um das Wort [from, to) in `line` (Text der Zeile, from/to = Spalten): von der letzten Satzgrenze (. ! ? : ;
@@ -44,11 +44,12 @@ export const aiCorrect = {
 
   /** → Promise<[Vorschläge]>; Fehler: AbortError, TimeoutError, sonst „nicht verfügbar“. */
   async suggest(word, sentence, signal) {
-    const key = word + '\0' + sentence;
+    const key = modelFor('correct') + '\0' + word + '\0' + sentence;
     if (cache.has(key)) return cache.get(key);
     const text = await chat({
       system: SYSTEM,
       user: `Kontext: ${sentence}\nMarkiertes Wort: ${word}`,
+      purpose: 'correct',
       maxTokens: 60,
       temperature: 0.2,
       timeout: TIMEOUT,

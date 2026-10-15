@@ -115,9 +115,21 @@ Notiz-Editor (Suche → Notiz) und VL-Editor (Study) sind derselbe Markdown-Edit
 
 **Korrekturvorschläge (nur am Computer):** Steht der Cursor in einem Wort, das weder in den Wortlisten (Deutsch, Englisch, je ~50.000 häufigste Wörter) noch mindestens zweimal im eigenen Vault vorkommt, erscheinen darunter bis zu 4 Vorschläge – kleinster Tippabstand zuerst, dann das häufigste Wort. Klick oder Alt+1…4 ersetzt das Wort. Fachbegriffe, die man öfter in Notizen verwendet, gelten damit automatisch als bekannt. Die rote Unterkringelung kommt weiter vom Browser.
 
-**KI-Korrektur (nur am Computer):** Doppelklick auf ein Wort öffnet ein kleines Menü: oben sofort die Vorschläge aus dem Wörterbuch (wenn das Wort unbekannt ist), darunter bis zu 5 Vorschläge eines Sprachmodells, sobald sie da sind (Duplikate fallen weg). Klick oder Alt+1…9 ersetzt das Wort; Escape, Klick daneben oder Weitertippen schließt das Menü. An das Modell geht nur der Satz um das Wort. Dafür unter **Settings → KI-Korrektur** einen eigenen [Tinfoil](https://tinfoil.sh)-API-Key eintragen (bleibt im Browser; **Testen** prüft Verbindung und Enclave). Ohne Key oder offline gibt es nur die Wörterbuch-Vorschläge; antwortet das Modell nicht innerhalb von 5 Sekunden, steht „KI-Vorschläge nicht verfügbar“ im Menü. Gleiche Anfragen (Wort + Satz) werden bis zum Neuladen gemerkt.
+**KI-Korrektur (nur am Computer):** Doppelklick auf ein Wort öffnet ein kleines Menü: oben sofort die Vorschläge aus dem Wörterbuch (wenn das Wort unbekannt ist), darunter bis zu 5 Vorschläge eines Sprachmodells, sobald sie da sind (Duplikate fallen weg). Klick oder Alt+1…9 ersetzt das Wort; Escape, Klick daneben oder Weitertippen schließt das Menü. An das Modell geht nur der Satz um das Wort. Dafür unter **Settings → KI** einen eigenen [Tinfoil](https://tinfoil.sh)-API-Key eintragen (bleibt im Browser; **Testen** prüft Verbindung und Enclave). Ohne Key oder offline gibt es nur die Wörterbuch-Vorschläge; antwortet das Modell nicht innerhalb von 5 Sekunden, steht „KI-Vorschläge nicht verfügbar“ im Menü. Gleiche Anfragen (Wort + Satz) werden bis zum Neuladen gemerkt.
 
-Die Anfragen laufen über das offizielle Tinfoil-SDK (`vendor/tinfoil.js`, wird erst bei Bedarf geladen): Es prüft die Attestierung der Enclave und verschlüsselt Anfragen Ende-zu-Ende. Der Zugriff aufs Modell steckt in `features/llm.js` (`chat()`, `extractJSON()`, Modell-IDs in `MODELS`) und ist für weitere KI-Funktionen gedacht. Modell-ID ändern: `MODELS.fast` in `features/llm.js`. SDK aktualisieren: Version in `vendor/tinfoil/package.json`, dann `vendor/tinfoil/build.sh`.
+**KI-Prompts auf markierten Text (nur am Computer):** Text markieren – darunter erscheint ein Eingabefeld (es nimmt den Fokus nicht weg, Weitertippen ersetzt wie gewohnt die Markierung; **Strg/Cmd+K** springt hinein). Dort einen eigenen Prompt tippen oder eine Abkürzung wie `summary` oder `explain` (Vorschläge darunter antippen, Tab ergänzt; hinter der Abkürzung sind weitere Anweisungen möglich, z. B. `summary auf Englisch`). Enter schickt Prompt + markierten Text ans Modell, die Antwort erscheint nach und nach in einem kleinen Dialog: **Einfügen** setzt sie in eine neue Zeile unter den Cursor und schließt, **Schließen**/Escape schließt ohne Einfügen, **Kopieren** kopiert sie.
+
+Die Abkürzungen stehen in `Prompts.md` im obersten Ordner des Vaults (Settings bietet an, sie mit Standard-Prompts anzulegen; ohne die Datei gelten summary, explain, fix, translate, questions). Jede `##`-Überschrift ist eine Abkürzung, der Text darunter der Prompt; `{{text}}` steht für den markierten Text (fehlt es, kommt der Text ans Ende):
+
+```markdown
+## summary
+Fasse den Text in höchstens 5 Stichpunkten zusammen.
+
+## eli5
+Erkläre {{text}} so, dass es ein Kind versteht.
+```
+
+Die Anfragen laufen über das offizielle Tinfoil-SDK (`vendor/tinfoil.js`, wird erst bei Bedarf geladen): Es prüft die Attestierung der Enclave und verschlüsselt Anfragen Ende-zu-Ende. Der Zugriff aufs Modell steckt in `features/llm.js` (`chat()` mit Streaming, `listModels()`, `extractJSON()`, Standard-Modelle in `DEFAULT_MODELS`) und ist für weitere KI-Funktionen gedacht. Die Modelle für Korrektur und Prompts lassen sich unter **Settings → KI** ändern (Vorschläge aus der aktuellen Modell-Liste von Tinfoil; leer = Standard: `gemma4-31b` für die Korrektur, `deepseek-v4-1-flash` für Prompts). SDK aktualisieren: Version in `vendor/tinfoil/package.json`, dann `vendor/tinfoil/build.sh`.
 
 CodeMirror liegt fertig gebündelt in `vendor/codemirror.js` (die App braucht weiterhin kein npm). Neu bauen bzw. aktualisieren: Versionen in `vendor/codemirror/package.json` anpassen, dann `vendor/codemirror/build.sh`.
 
@@ -138,7 +150,7 @@ Damit die Suche schnell ist, hält die App eine Kopie aller Notizen im Browser-S
 ### Settings
 
 - **Name:** steht beim PDF-Export einer VL unter dem Titel (wird nur im Browser gespeichert).
-- **KI-Korrektur:** eigener Tinfoil-API-Key für die KI-Vorschläge im Editor (nur im Browser gespeichert), mit **Testen**.
+- **KI:** eigener Tinfoil-API-Key für alle KI-Funktionen (nur im Browser gespeichert) mit **Testen**, Modell für die Korrektur und für Prompts, `Prompts.md` anlegen.
 - **Darstellung** (Automatisch / Hell / Dunkel).
 - **Abgleich:** wann und wie zuletzt abgeglichen wurde, mit **Jetzt abgleichen** und **Komplett abgleichen**.
 - Darunter die letzten Einträge des Plugin-Logs (zur Kontrolle, ob das Plugin läuft).

@@ -455,6 +455,140 @@ function wordMenu({ spell, ai }) {
   ];
 }
 
+/* ---------- Prompt auf markierten Text (Desktop) ---------- */
+
+/** Fügt `text` in einer neuen Zeile unter der Zeile mit dem Cursor ein. */
+function insertBelow(view, text) {
+  if (!text) return;
+  const line = view.state.doc.lineAt(view.state.selection.main.to);
+  const insert = '\n' + text;
+  view.dispatch({ changes: { from: line.to, insert }, selection: { anchor: line.to + insert.length }, scrollIntoView: true, userEvent: 'input' });
+  view.focus();
+}
+
+/**
+ * Ist Text markiert (und steht kurz still), erscheint darunter ein Eingabefeld für einen Prompt (ohne den Fokus zu
+ * nehmen; Strg/Cmd+K springt hinein). Abkürzungen aus `prompt.list()` werden darunter angeboten (Tab ergänzt).
+ * Enter schickt Prompt + markierten Text an `prompt.run()` (siehe prompts.js), das die Antwort anzeigt.
+ */
+function selectionPrompt(prompt) {
+  const setAsk = StateEffect.define();
+  const close = (view) => {
+    if (!view.state.field(askField, false)) return false;
+    view.dispatch({ effects: setAsk.of(null) });
+    return true;
+  };
+
+  function askTooltip(view, v) {
+    const el = (tag, className, attrs = {}) => Object.assign(document.createElement(tag), { className }, attrs);
+    const dom = el('div', 'cm-ask');
+    const input = el('input', 'cm-ask-input', { type: 'text', placeholder: '✦ Prompt oder Abkürzung …', spellcheck: false });
+    const chips = el('div', 'cm-ask-chips');
+    dom.append(input, chips);
+    const submit = (text) => {
+      if (!text.trim()) return;
+      const selected = view.state.sliceDoc(v.from, v.to);
+      close(view);
+      prompt.run({ input: text, text: selected, insert: (out) => insertBelow(view, out), focusBack: () => view.focus() });
+    };
+    const renderChips = () => {
+      const t = input.value.trim().replace(/^\//, '').toLowerCase();
+      const hits = /\s/.test(t) ? [] : prompt.list().filter((p) => p.name.startsWith(t));
+      chips.replaceChildren(...hits.slice(0, 8).map((p) => {
+        const b = el('button', 'cm-ask-chip', { type: 'button', textContent: p.name, title: p.prompt });
+        b.addEventListener('mousedown', (e) => e.preventDefault());
+        b.addEventListener('click', () => submit(p.name));
+        return b;
+      }));
+      return hits;
+    };
+    input.addEventListener('input', renderChips);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); submit(input.value); } else if (e.key === 'Escape') { e.preventDefault(); close(view); view.focus(); } else if (e.key === 'Tab' && !e.shiftKey) {
+        const [first] = renderChips();
+        if (first && input.value.trim() && first.name !== input.value.trim().toLowerCase()) {
+          e.preventDefault();
+          input.value = first.name + ' ';
+          renderChips();
+        }
+      }
+    });
+    input.addEventListener('blur', () => setTimeout(() => {
+      if (!view.hasFocus && !dom.contains(document.activeElement)) close(view);
+    }));
+    renderChips();
+    return {
+      dom,
+      mount() { if (v.focus) input.focus(); },
+    };
+  }
+
+  const askField = StateField.define({
+    create: () => null,
+    update(v, tr) {
+      for (const e of tr.effects) if (e.is(setAsk)) return e.value;
+      if (!v || tr.docChanged) return null;
+      const r = tr.newSelection.main;
+      return r.from === v.from && r.to === v.to ? v : null;
+    },
+    provide: (f) => showTooltip.from(f, (v) => v && { pos: v.to, above: false, create: (view) => askTooltip(view, v) }),
+  });
+
+  const open = (view, focus) => {
+    const r = view.state.selection.main;
+    if (r.empty || !prompt.available()) return false;
+    const cur = view.state.field(askField, false);
+    if (cur && cur.from === r.from && cur.to === r.to && !focus) return true;
+    view.dispatch({ effects: setAsk.of({ from: r.from, to: r.to, focus }) });
+    return true;
+  };
+
+  const plugin = ViewPlugin.fromClass(class {
+    constructor(view) {
+      this.view = view;
+      this.timer = 0;
+      this.down = false;
+      this.onUp = () => { if (this.down) { this.down = false; this.schedule(); } };
+      document.addEventListener('mouseup', this.onUp);
+      if (prompt.available()) prompt.warmUp();
+    }
+    update(u) {
+      if (u.selectionSet) this.schedule();
+      if (u.focusChanged && !u.view.hasFocus) {
+        setTimeout(() => {
+          if (this.view.dom.isConnected && !this.view.hasFocus && !document.activeElement?.closest('.cm-ask')) close(this.view);
+        });
+      }
+    }
+    schedule() {
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.check(), 350);
+    }
+    check() {
+      const { view } = this;
+      const r = view.state.selection.main;
+      if (this.down || !view.hasFocus || r.empty) return;
+      if (view.state.field(wordMenuField, false)) return; // Doppelklick: Wort-Menü hat Vorrang
+      if (view.state.sliceDoc(r.from, r.to).trim().length < 3) return;
+      open(view, false);
+    }
+    destroy() { clearTimeout(this.timer); document.removeEventListener('mouseup', this.onUp); }
+  }, {
+    eventHandlers: {
+      mousedown() { this.down = true; },
+    },
+  });
+
+  return [
+    askField,
+    plugin,
+    Prec.high(keymap.of([
+      { key: 'Mod-k', run: (view) => open(view, true) },
+      { key: 'Escape', run: close },
+    ])),
+  ];
+}
+
 /* ---------- Bilder einfügen (Zwischenablage, Ziehen) ---------- */
 
 function imagePaste(saveImage) {
@@ -561,6 +695,7 @@ function continueList(view) {
 /**
  * opts: { parent, doc, onChange(text), placeholder, decorate(text), openLink(target), resolveImage(link) → Promise<URL>,
  *         spell (siehe spell.js, nur am Desktop übergeben), ai (siehe aicorrect.js, nur am Desktop),
+ *         prompt (siehe prompts.js, nur am Desktop),
  *         saveImage(file) → Promise<Markdown-Link> }
  * Gibt { view, value, set(text), focus(), jumpToLine(i), destroy() } zurück.
  */
@@ -593,6 +728,7 @@ export function createEditor(opts) {
     opts.placeholder ? cmPlaceholder(opts.placeholder) : [],
     opts.spell ? spellSuggest(opts.spell) : [],
     opts.spell || opts.ai ? wordMenu({ spell: opts.spell, ai: opts.ai }) : [],
+    opts.prompt ? selectionPrompt(opts.prompt) : [],
     opts.saveImage ? imagePaste(opts.saveImage) : [],
     EditorView.updateListener.of((u) => { if (u.docChanged) opts.onChange?.(u.state.doc.toString()); }),
   ];
