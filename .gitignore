@@ -1,2 +1,4 @@
 vendor/codemirror/node_modules/
 vendor/codemirror/package-lock.json
+vendor/tinfoil/node_modules/
+vendor/tinfoil/package-lock.json

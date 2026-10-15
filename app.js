@@ -8,6 +8,7 @@ import syncTab from './features/sync.js';
 import { applyTheme } from './features/theme.js';
 import { createEditor } from './features/editor.js';
 import { createSpell } from './features/spell.js';
+import { aiCorrect } from './features/aicorrect.js';
 
 // Neue Feature-Module hier eintragen: { id, title, mount(root, ui), show?() }
 const FEATURES = [search, tagging, study, review, syncTab];
@@ -129,10 +130,12 @@ async function saveImage(file) {
 
 /* ---------- Korrekturvorschläge (nur Desktop: feiner Zeiger) ---------- */
 
-const spell = matchMedia('(hover: hover) and (pointer: fine)').matches ? createSpell({ notes: () => core.list() }) : null;
+const desktop = matchMedia('(hover: hover) and (pointer: fine)').matches;
+const spell = desktop ? createSpell({ notes: () => core.list() }) : null;
 if (spell) core.on('change', () => spell.invalidate());
+const ai = desktop ? aiCorrect : null; // KI-Vorschläge per Doppelklick, ebenfalls nur am Computer
 
-const ui = { core, toast, openNote, openLink, resolveImage, saveImage, spell, pickVault };
+const ui = { core, toast, openNote, openLink, resolveImage, saveImage, spell, ai, pickVault };
 
 /* ---------- Editor ---------- */
 
@@ -228,6 +231,7 @@ async function init() {
     resolveImage: (link) => resolveImage(link, current ? current.path : ''),
     saveImage,
     spell,
+    ai,
   });
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's' && current) { e.preventDefault(); save(); }

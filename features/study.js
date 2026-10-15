@@ -217,6 +217,7 @@ function renderEditor(text) {
     openLink: (target) => ui.openLink(target),
     saveImage: ui.saveImage,
     spell: ui.spell,
+    ai: ui.ai,
     // Bilder relativ zum Ordner der TILs dieser VL auflösen
     resolveImage: (link) => ui.resolveImage(link, ed.folder ? ed.folder + '/_.md' : '_.md'),
   });

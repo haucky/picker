@@ -1,8 +1,9 @@
-// Feature „Settings“: Name für den Export, Darstellung, Stand des Abgleichs, manueller (vollständiger) Abgleich,
+// Feature „Settings“: Name für den Export, KI-Key, Darstellung, Stand des Abgleichs, manueller (vollständiger) Abgleich,
 // Diagnose des Obsidian-Plugin-Logs.
 import { h } from './dom.js';
 import { THEMES, getTheme, setTheme } from './theme.js';
 import { exportName, setExportName } from './export.js';
+import { apiKey, setApiKey, chat, MODELS } from './llm.js';
 
 const SHOW_ENTRIES = 30;
 const OPS = { create: 'neu', modify: 'geändert', delete: 'gelöscht', rename: 'umbenannt', start: 'Obsidian gestartet' };
@@ -87,6 +88,26 @@ function nameInput() {
   });
 }
 
+function aiRow() {
+  const input = h('input', {
+    type: 'password', class: 'filter settings-name', value: apiKey(), placeholder: 'Tinfoil-API-Key', autocomplete: 'off',
+    spellcheck: 'false', 'aria-label': 'Tinfoil-API-Key', oninput: (e) => setApiKey(e.target.value),
+  });
+  const test = h('button', { type: 'button', class: 'btn small', onclick: async () => {
+    if (!apiKey()) return ui.toast('Erst einen Key eintragen.');
+    test.disabled = true;
+    try {
+      await chat({ user: 'Antworte nur mit: OK', maxTokens: 5, timeout: 30000 });
+      ui.toast(`Verbunden ✓ Enclave geprüft (${MODELS.fast})`, 4000);
+    } catch (err) {
+      ui.toast('Fehlgeschlagen: ' + (err.message || err.name), 6000);
+    } finally {
+      test.disabled = false;
+    }
+  } }, 'Testen');
+  return h('div', { class: 'settings-key' }, input, test);
+}
+
 async function run(full) {
   if (!(await core.hasPermission(true))) return ui.toast('Zugriff auf den Vault wurde nicht erlaubt.', 4000);
   await core.sync({ full });
@@ -111,6 +132,12 @@ export default {
       h('h2', { class: 'section' }, 'Name'),
       nameInput(),
       h('p', { class: 'hint left' }, 'Steht beim Export einer VL (Study → VL → PDF) unter dem Titel.'),
+      h('h2', { class: 'section' }, 'KI-Korrektur'),
+      aiRow(),
+      h('p', { class: 'hint left' },
+        'Nur am Computer: Doppelklick auf ein Wort zeigt Korrekturvorschläge aus dem Wörterbuch und vom Sprachmodell. ' +
+        'Läuft über Tinfoil (verschlüsselt, Enclave wird geprüft); gesendet wird nur der Satz um das Wort. ' +
+        'Der Key bleibt in diesem Browser. Key unter tinfoil.sh anlegen.'),
       h('h2', { class: 'section' }, 'Darstellung'),
       themeRow(),
       h('p', { class: 'hint left' }, 'Solarized hell/dunkel. „Automatisch“ folgt der Einstellung des Handys.'),

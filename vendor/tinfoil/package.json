@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "description": "Nur zum Bauen von vendor/tinfoil.js (./build.sh). Die App selbst braucht kein npm.",
+  "dependencies": {
+    "tinfoil": "1.2.2",
+    "esbuild": "0.28.2"
+  }
+}

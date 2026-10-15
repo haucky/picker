@@ -8,6 +8,7 @@ import {
   Language, defineLanguageFacet, LanguageSupport, syntaxTree, markdownParser, GFM,
 } from '../vendor/codemirror.js';
 import { parseSize, splitAlt, sizeImage } from './image.js';
+import { sentenceAround } from './aicorrect.js';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const WIKI_RE = /(!?)\[\[([^\]\n]+?)\]\]/g;
@@ -297,6 +298,14 @@ function applySuggestion(view, i) {
 
 const SKIP_NODES = new Set([...CODE_NODES, 'URL', 'LinkLabel', 'HTMLTag', 'Comment']);
 
+/** Steht das Wort ab `from` nicht im Fließtext (Tag, Code, URL, HTML, Kommentar, [[Link]])? */
+function notProse(state, from) {
+  if (state.sliceDoc(from - 1, from) === '#') return true;
+  for (let n = syntaxTree(state).resolveInner(from, 1); n; n = n.parent) if (SKIP_NODES.has(n.name)) return true;
+  const line = state.doc.lineAt(from);
+  return /\[\[[^\]]*$/.test(state.sliceDoc(line.from, from));
+}
+
 /** Zeigt für das Wort am Cursor Vorschläge, wenn `spell` es nicht kennt (kurz nach dem letzten Tastendruck). */
 function spellSuggest(spell) {
   const plugin = ViewPlugin.fromClass(class {
@@ -314,11 +323,7 @@ function spellSuggest(spell) {
       const range = state.wordAt(r.head);
       if (!range) return;
       const word = state.sliceDoc(range.from, range.to);
-      if (!/^\p{L}+$/u.test(word) || spell.isKnown(word)) return;
-      if (state.sliceDoc(range.from - 1, range.from) === '#') return; // Tag
-      for (let n = syntaxTree(state).resolveInner(r.head, -1); n; n = n.parent) if (SKIP_NODES.has(n.name)) return;
-      const line = state.doc.lineAt(r.head);
-      if (/\[\[[^\]]*$/.test(state.sliceDoc(line.from, range.from))) return; // in [[Link]]
+      if (!/^\p{L}+$/u.test(word) || spell.isKnown(word) || notProse(state, range.from)) return;
       view.dispatch({ effects: setSuggest.of({ from: range.from, to: range.to, suggestions: spell.suggest(word) }) });
     }
     destroy() { clearTimeout(this.timer); }
@@ -327,6 +332,126 @@ function spellSuggest(spell) {
     suggestField,
     plugin,
     keymap.of([1, 2, 3, 4].map((n) => ({ key: `Alt-${n}`, run: (view) => applySuggestion(view, n - 1) }))),
+  ];
+}
+
+/* ---------- Wort-Menü per Doppelklick (Desktop): Wörterbuch + KI ---------- */
+
+// Wert: { id, from, to, word, dict: [..], ai: null (aus) | 'loading' | 'timeout' | [..] }
+const setWordMenu = StateEffect.define();
+const wordMenuField = StateField.define({
+  create: () => null,
+  update(v, tr) {
+    for (const e of tr.effects) if (e.is(setWordMenu)) return e.value;
+    if (!v || tr.docChanged) return null;
+    const r = tr.newSelection.main;
+    return r.from === v.from && r.to === v.to ? v : null;
+  },
+  provide: (f) => showTooltip.from(f, (v) => v && { pos: v.from, above: false, create: (view) => ({ dom: renderWordMenu(view, v) }) }),
+});
+
+const menuItems = (v) => [...v.dict, ...(Array.isArray(v.ai) ? v.ai : [])];
+
+function renderWordMenu(view, v) {
+  const el = (tag, className, text) => Object.assign(document.createElement(tag), { className, textContent: text });
+  const dom = el('div', 'cm-wordmenu', '');
+  let i = 0;
+  const item = (s) => {
+    const b = el('button', 'cm-wordmenu-item', s);
+    const n = i++;
+    b.type = 'button';
+    if (n < 9) b.title = `Alt+${n + 1}`;
+    b.addEventListener('mousedown', (e) => { e.preventDefault(); applyWordMenu(view, n); });
+    dom.append(b);
+  };
+  v.dict.forEach(item);
+  if (v.ai != null) {
+    if (v.dict.length) dom.append(el('div', 'cm-wordmenu-sep', ''));
+    if (v.ai === 'loading') dom.append(el('span', 'cm-wordmenu-note loading', 'KI-Vorschläge …'));
+    else if (v.ai === 'timeout') dom.append(el('span', 'cm-wordmenu-note', 'KI-Vorschläge nicht verfügbar'));
+    else v.ai.forEach(item);
+  }
+  if (!dom.childElementCount) dom.append(el('span', 'cm-wordmenu-note', 'keine Vorschläge'));
+  return dom;
+}
+
+function applyWordMenu(view, i) {
+  const v = view.state.field(wordMenuField, false);
+  const s = v && menuItems(v)[i];
+  if (!s) return false;
+  view.dispatch({ changes: { from: v.from, to: v.to, insert: s }, selection: { anchor: v.from + s.length }, userEvent: 'input' });
+  return true;
+}
+
+function closeWordMenu(view) {
+  if (!view.state.field(wordMenuField, false)) return false;
+  view.dispatch({ effects: setWordMenu.of(null) });
+  return true;
+}
+
+/**
+ * Doppelklick auf ein Wort öffnet ein Menü: sofort die Wörterbuch-Vorschläge (nur für unbekannte Wörter), darunter
+ * KI-Vorschläge (`ai`, siehe aicorrect.js; nur mit Key und online), sobald sie da sind. Escape, Klick daneben oder
+ * Tippen schließt es; ein neuer Doppelklick bricht die laufende Anfrage ab.
+ */
+function wordMenu({ spell, ai }) {
+  let seq = 0;
+  const plugin = ViewPlugin.fromClass(class {
+    constructor(view) {
+      this.view = view;
+      this.ctrl = null;
+      this.dictReady = !spell;
+      spell?.ready().then(() => { this.dictReady = true; }, () => {});
+      if (ai?.available()) ai.warmUp();
+    }
+    update(u) {
+      if (u.startState.field(wordMenuField, false) && !u.state.field(wordMenuField, false)) this.abort();
+      if (u.focusChanged && !u.view.hasFocus) setTimeout(() => { if (this.view.dom.isConnected) closeWordMenu(this.view); });
+    }
+    abort() { this.ctrl?.abort(); this.ctrl = null; }
+    open() {
+      const { view } = this;
+      const { state } = view;
+      let r = state.selection.main;
+      if (r.empty) r = state.wordAt(r.head);
+      if (!r) return;
+      const word = state.sliceDoc(r.from, r.to);
+      if (!/^\p{L}+$/u.test(word) || notProse(state, r.from)) return;
+      this.abort();
+      const dict = spell && this.dictReady && !spell.isKnown(word) ? spell.suggest(word, 5) : [];
+      const useAi = !!ai && ai.available();
+      const id = ++seq;
+      view.dispatch({ effects: setWordMenu.of({ id, from: r.from, to: r.to, word, dict, ai: useAi ? 'loading' : null }) });
+      if (!useAi) return;
+      const line = state.doc.lineAt(r.from);
+      const sentence = sentenceAround(line.text, r.from - line.from, r.to - line.from);
+      const ctrl = this.ctrl = new AbortController();
+      ai.suggest(word, sentence, ctrl.signal).then((list) => {
+        const known = new Set(dict.map((s) => s.toLowerCase()));
+        return list.filter((s) => !known.has(s.toLowerCase()));
+      }, (err) => {
+        if (err.name === 'AbortError') return undefined;
+        if (err.name !== 'TimeoutError') console.warn('KI-Vorschläge:', err);
+        return err.name === 'TimeoutError' ? 'timeout' : null; // andere Fehler: still nur Wörterbuch
+      }).then((res) => {
+        if (res === undefined || ctrl.signal.aborted) return;
+        const cur = view.state.field(wordMenuField, false);
+        if (cur && cur.id === id) view.dispatch({ effects: setWordMenu.of({ ...cur, ai: res }) });
+      });
+    }
+    destroy() { this.abort(); }
+  }, {
+    eventHandlers: {
+      dblclick() { setTimeout(() => this.open()); }, // nach CodeMirrors Wort-Auswahl
+    },
+  });
+  return [
+    wordMenuField,
+    plugin,
+    Prec.high(keymap.of([
+      { key: 'Escape', run: closeWordMenu },
+      ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ key: `Alt-${n}`, run: (view) => applyWordMenu(view, n - 1) })),
+    ])),
   ];
 }
 
@@ -435,7 +560,8 @@ function continueList(view) {
 
 /**
  * opts: { parent, doc, onChange(text), placeholder, decorate(text), openLink(target), resolveImage(link) → Promise<URL>,
- *         spell (siehe spell.js, nur am Desktop übergeben), saveImage(file) → Promise<Markdown-Link> }
+ *         spell (siehe spell.js, nur am Desktop übergeben), ai (siehe aicorrect.js, nur am Desktop),
+ *         saveImage(file) → Promise<Markdown-Link> }
  * Gibt { view, value, set(text), focus(), jumpToLine(i), destroy() } zurück.
  */
 export function createEditor(opts) {
@@ -466,6 +592,7 @@ export function createEditor(opts) {
     opts.decorate ? extraMarks(opts.decorate) : [],
     opts.placeholder ? cmPlaceholder(opts.placeholder) : [],
     opts.spell ? spellSuggest(opts.spell) : [],
+    opts.spell || opts.ai ? wordMenu({ spell: opts.spell, ai: opts.ai }) : [],
     opts.saveImage ? imagePaste(opts.saveImage) : [],
     EditorView.updateListener.of((u) => { if (u.docChanged) opts.onChange?.(u.state.doc.toString()); }),
   ];

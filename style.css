@@ -505,3 +505,18 @@ img.img-big { max-width: 100%; }
 .print-doc img.img-normal { max-width: 75%; max-height: 11cm; }
 .print-doc img.img-big { width: 100%; max-height: 22cm; object-fit: contain; }
 .print-doc .md-img-ph { display: none; }
+
+/* Wort-Menü per Doppelklick (Desktop): Wörterbuch-Vorschläge, darunter KI-Vorschläge */
+.cm-wordmenu { display: flex; flex-direction: column; min-width: 160px; max-width: 320px; padding: 4px; font: 14px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.cm-wordmenu-item { border: 0; background: transparent; color: var(--text); padding: 5px 10px; border-radius: 6px; text-align: left; }
+.cm-wordmenu-item:first-child { color: var(--accent); font-weight: 600; }
+.cm-wordmenu-item:hover { background: var(--bg); }
+.cm-wordmenu-sep { border-top: 1px solid var(--line); margin: 4px 6px; }
+.cm-wordmenu-note { color: var(--muted); padding: 5px 10px; }
+.cm-wordmenu-note.loading::before {
+  content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; vertical-align: -1px;
+  border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: cm-spin .8s linear infinite;
+}
+@keyframes cm-spin { to { transform: rotate(360deg); } }
+.settings-key { display: flex; gap: 10px; align-items: center; }
+.settings-key .filter { flex: 1; }
