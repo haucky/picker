@@ -10,22 +10,6 @@ const MAX_TOKENS = 1500;
 const SYSTEM = 'Du hilfst beim Schreiben und Lernen mit Notizen in Obsidian. Antworte in der Sprache des Textes, ' +
   'außer der Auftrag verlangt etwas anderes. Antworte knapp und als Markdown, ohne Einleitung und ohne Schlussformel.';
 
-/** Standard-Abkürzungen, solange es keine Prompts.md gibt (und Inhalt für „Prompts.md anlegen“). */
-export const DEFAULT_PROMPTS = [
-  { name: 'summary', prompt: 'Fasse den Text in höchstens 5 Stichpunkten zusammen.' },
-  { name: 'explain', prompt: 'Erkläre den Text einfach und verständlich, mit einem kurzen Beispiel.' },
-  { name: 'fix', prompt: 'Korrigiere Rechtschreibung, Grammatik und Zeichensetzung. Gib nur den korrigierten Text zurück.' },
-  { name: 'translate', prompt: 'Übersetze den Text ins Englische (ist er schon Englisch: ins Deutsche). Gib nur die Übersetzung zurück.' },
-  { name: 'questions', prompt: 'Formuliere 3 Prüfungsfragen zum Text, jeweils als eigene Zeile mit „?“ am Ende, darunter die Antwort als Stichpunkt mit „- “.' },
-];
-
-export function defaultPromptsFile() {
-  return '# Prompts\n\nAbkürzungen für KI-Prompts im Editor: Text markieren, Abkürzung eintippen (danach optional weitere ' +
-    'Anweisungen), Enter. Jede `##`-Überschrift ist eine Abkürzung, der Text darunter der Prompt. `{{text}}` steht für den ' +
-    'markierten Text; fehlt es, kommt der Text ans Ende.\n\n' +
-    DEFAULT_PROMPTS.map((p) => `## ${p.name}\n${p.prompt}\n`).join('\n');
-}
-
 /** Prompts.md → [{ name (klein), prompt }]: jede ##-Überschrift ist eine Abkürzung, der Text darunter der Prompt. */
 export function parsePrompts(text) {
   const out = [];
@@ -135,8 +119,7 @@ function openDialog({ label, user, insert, focusBack }) {
 export function createPrompts({ notes }) {
   const list = () => {
     const file = notes().find((n) => n.path.toLowerCase() === PROMPTS_PATH.toLowerCase());
-    const parsed = file ? parsePrompts(file.text) : [];
-    return parsed.length ? parsed : DEFAULT_PROMPTS;
+    return file ? parsePrompts(file.text) : [];
   };
   return {
     available: llmAvailable,

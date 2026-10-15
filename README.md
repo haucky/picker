@@ -119,7 +119,7 @@ Notiz-Editor (Suche → Notiz) und VL-Editor (Study) sind derselbe Markdown-Edit
 
 **KI-Prompts auf markierten Text (nur am Computer):** Text markieren – darunter erscheint ein Eingabefeld (es nimmt den Fokus nicht weg, Weitertippen ersetzt wie gewohnt die Markierung; **Strg/Cmd+K** springt hinein). Dort einen eigenen Prompt tippen oder eine Abkürzung wie `summary` oder `explain` (Vorschläge darunter antippen, Tab ergänzt; hinter der Abkürzung sind weitere Anweisungen möglich, z. B. `summary auf Englisch`). Enter schickt Prompt + markierten Text ans Modell, die Antwort erscheint nach und nach in einem kleinen Dialog: **Einfügen** setzt sie in eine neue Zeile unter den Cursor und schließt, **Schließen**/Escape schließt ohne Einfügen, **Kopieren** kopiert sie.
 
-Die Abkürzungen stehen in `Prompts.md` im obersten Ordner des Vaults (Settings bietet an, sie mit Standard-Prompts anzulegen; ohne die Datei gelten summary, explain, fix, translate, questions). Jede `##`-Überschrift ist eine Abkürzung, der Text darunter der Prompt; `{{text}}` steht für den markierten Text (fehlt es, kommt der Text ans Ende):
+Die Abkürzungen stehen in `Prompts.md` im obersten Ordner des Vaults (ohne die Datei gibt es nur eigene Prompts). Jede `##`-Überschrift ist eine Abkürzung, der Text darunter der Prompt; `{{text}}` steht für den markierten Text (fehlt es, kommt der Text ans Ende):
 
 ```markdown
 ## summary
@@ -150,7 +150,7 @@ Damit die Suche schnell ist, hält die App eine Kopie aller Notizen im Browser-S
 ### Settings
 
 - **Name:** steht beim PDF-Export einer VL unter dem Titel (wird nur im Browser gespeichert).
-- **KI:** eigener Tinfoil-API-Key für alle KI-Funktionen (nur im Browser gespeichert) mit **Testen**, Modell für die Korrektur und für Prompts, `Prompts.md` anlegen.
+- **KI:** eigener Tinfoil-API-Key für alle KI-Funktionen (nur im Browser gespeichert) mit **Testen**, Modell für die Korrektur und für Prompts, gefundene Abkürzungen aus `Prompts.md`.
 - **Darstellung** (Automatisch / Hell / Dunkel).
 - **Abgleich:** wann und wie zuletzt abgeglichen wurde, mit **Jetzt abgleichen** und **Komplett abgleichen**.
 - Darunter die letzten Einträge des Plugin-Logs (zur Kontrolle, ob das Plugin läuft).

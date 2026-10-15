@@ -4,7 +4,7 @@ import { h } from './dom.js';
 import { THEMES, getTheme, setTheme } from './theme.js';
 import { exportName, setExportName } from './export.js';
 import { apiKey, setApiKey, chat, modelFor, setModel, DEFAULT_MODELS, listModels } from './llm.js';
-import { PROMPTS_PATH, DEFAULT_PROMPTS, defaultPromptsFile, parsePrompts } from './prompts.js';
+import { PROMPTS_PATH, parsePrompts } from './prompts.js';
 
 const SHOW_ENTRIES = 30;
 const OPS = { create: 'neu', modify: 'geändert', delete: 'gelöscht', rename: 'umbenannt', start: 'Obsidian gestartet' };
@@ -133,22 +133,10 @@ function loadModels() {
 
 function renderPromptsInfo() {
   const file = core.list().find((n) => n.path.toLowerCase() === PROMPTS_PATH.toLowerCase());
-  const list = file ? parsePrompts(file.text) : [];
-  const names = (file && list.length ? list : DEFAULT_PROMPTS).map((p) => p.name).join(', ');
-  promptsInfo.replaceChildren(...[
-    h('p', { class: 'hint left' }, file
-      ? `${PROMPTS_PATH}: ${list.length ? names : 'keine Abkürzungen gefunden – Standard: ' + names}`
-      : `Keine ${PROMPTS_PATH} im Vault – Standard-Abkürzungen: ${names}.`),
-    file ? null : h('button', { type: 'button', class: 'btn small', onclick: async () => {
-      try {
-        await core.create(PROMPTS_PATH, defaultPromptsFile());
-        ui.toast(`${PROMPTS_PATH} angelegt ✓`);
-      } catch (err) {
-        ui.toast('Konnte nicht anlegen: ' + err.message, 4000);
-      }
-      renderPromptsInfo();
-    } }, `${PROMPTS_PATH} anlegen`),
-  ].filter(Boolean));
+  const names = file ? parsePrompts(file.text).map((p) => p.name).join(', ') : '';
+  promptsInfo.replaceChildren(h('p', { class: 'hint left' }, !file
+    ? `Keine ${PROMPTS_PATH} im Vault – nur eigene Prompts. Abkürzungen: siehe README.`
+    : `${PROMPTS_PATH}: ${names || 'keine ##-Überschriften gefunden'}`));
 }
 
 async function run(full) {
