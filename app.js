@@ -211,6 +211,10 @@ function showApp() {
 async function init() {
   applyTheme();
   if ('serviceWorker' in navigator) {
+    // Neue Version installiert (neuer Service Worker übernimmt): Hinweis, die geladene Seite ist noch die alte.
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => toast('Neue Version geladen – Seite neu laden.', 8000));
+    }
     navigator.serviceWorker.register('service-worker.js').catch(() => {});
   }
 

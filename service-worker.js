@@ -1,7 +1,7 @@
 'use strict';
 
 // Version erhöhen, wenn sich die App-Shell ändert.
-const CACHE = 'vault-picker-v16';
+const CACHE = 'vault-picker-v17';
 const SHELL = [
   './',
   './index.html',
@@ -40,7 +40,11 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' – am HTTP-Cache des Browsers vorbei (GitHub Pages erlaubt 10 Min.), sonst landen alte Dateien
+  // im neuen Cache.
+  event.waitUntil(caches.open(CACHE)
+    .then((c) => c.addAll(SHELL.map((url) => new Request(url, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (event) => {
@@ -60,7 +64,7 @@ self.addEventListener('fetch', (event) => {
     const cache = await caches.open(CACHE);
     const lookup = req.mode === 'navigate' ? './index.html' : req;
     const cached = await cache.match(lookup, { ignoreSearch: true });
-    const network = fetch(req)
+    const network = fetch(req, { cache: 'no-cache' }) // beim Server nachfragen (ETag), nicht den HTTP-Cache nehmen
       .then((res) => {
         if (res.ok) cache.put(req.mode === 'navigate' ? './index.html' : req, res.clone());
         return res;
