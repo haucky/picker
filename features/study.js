@@ -38,6 +38,15 @@ function todoBadge(n) {
 
 const STATE_LABEL = { open: 'offen', ready: 'bereit', skip: 'nicht abfragen' };
 
+/** Kleiner Stern, der wie eine Fee herumhüpft und Sternenstaub verliert (eigener Takt je Eintrag). */
+function fairy() {
+  const delay = (max) => `${-(Math.random() * max).toFixed(2)}s`;
+  const dust = [[-7, 5], [6, 7], [-2, 9]].map(([dx, dy]) =>
+    h('span', { class: 'fairy-dust', style: `--dx: ${dx}px; --dy: ${dy}px; animation-delay: ${delay(2.5)}` }));
+  return h('span', { class: 'fairy', 'aria-label': 'alles bearbeitet' },
+    ...dust, h('span', { class: 'fairy-star', style: `animation-delay: ${delay(5)}` }, '✦'));
+}
+
 /** Keine offenen Fragen mehr (alle bereit oder nicht abfragen)? Dann wird der Eintrag hervorgehoben. */
 const allSet = (notes) => notes.length > 0 && countStates(notes).open === 0;
 
@@ -47,7 +56,7 @@ function stateBar(deck, notes) {
   const c = countStates(notes);
   const title = `${c.open} offen · ${c.ready} bereit · ${c.skip} nicht abfragen`;
   return h('span', { class: 'state-info', title },
-    c.open ? h('span', { class: 'state-open-count' }, `${c.open} offen`) : h('span', { class: 'state-spark', 'aria-label': 'alles bearbeitet' }, '✦'),
+    c.open ? h('span', { class: 'state-open-count' }, `${c.open} offen`) : fairy(),
     h('span', { class: 'state-bar' }, ...['ready', 'open', 'skip'].filter((k) => c[k])
       .map((k) => h('span', { class: 'state-seg ' + k, style: `flex-grow: ${c[k]}` }))));
 }

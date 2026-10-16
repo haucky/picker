@@ -34,7 +34,7 @@ Unten wechselst du zwischen den Modulen **Suche**, **Taggen**, **Study**, **Revi
 
 Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.md`), eine **VL** sind alle Notizen eines Stapels mit demselben `#date/JJJJ/MM/TT` (Notizen ohne Datums-Tag stehen unter „Ohne Datum“).
 
-- **Übersicht:** Stapel mit Zahl der offenen Todos, VLs und Fragen, dazu ein schmaler Balken mit dem Review-Status der Fragen (gelb offen, grün bereit, grau nicht abfragen) und „N offen“ – so sieht man, was noch nachzuarbeiten ist. Dasselbe pro VL in der Liste des Stapels. Gibt es keine offenen Fragen mehr, wird der Eintrag dezent hervorgehoben (grüner Rand, leichter Schimmer, ✦).
+- **Übersicht:** Stapel mit Zahl der offenen Todos, VLs und Fragen, dazu ein schmaler Balken mit dem Review-Status der Fragen (gelb offen, grün bereit, grau nicht abfragen) und „N offen“ – so sieht man, was noch nachzuarbeiten ist. Dasselbe pro VL in der Liste des Stapels. Gibt es keine offenen Fragen mehr, wird der Eintrag dezent hervorgehoben (leicht grüner Hintergrund, ein kleiner ✦ hüpft herum).
 - **Stapel antippen:** „+ Neue VL heute“ (bzw. „Heutige VL öffnen“), darunter alle offenen Todos des Stapels (antippen springt im Editor zur Stelle) und die VLs, neueste zuerst.
 - **VL antippen:** Alle Fragen der VL als ein Text:
 

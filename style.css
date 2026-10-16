@@ -18,8 +18,7 @@
   --green: #859900;
   --warn: #b58900;
   --todo-bg: rgba(203, 75, 22, .14);
-  --ready: #a9c41c;       /* helleres Grün für „bereit“ (Balken, Glanz) */
-  --shimmer: rgba(255, 255, 255, .07);
+  --ready: #a9c41c;       /* helleres Grün für „bereit“ (Balken, ✦) */
   --err-bg: rgba(220, 50, 47, .16);
   --tap: 48px;
   color-scheme: dark;
@@ -30,7 +29,7 @@
     --bg: #fdf6e3; --surface: #eee8d5; --line: #e2dbc6;
     --text: #586e75; --text-2: #657b83; --muted: #93a1a1;
     --mark: rgba(181, 137, 0, .25); --todo-bg: rgba(203, 75, 22, .10); --err-bg: rgba(220, 50, 47, .10);
-    --ready: #86a800; --shimmer: rgba(255, 255, 255, .55);
+    --ready: #86a800;
     color-scheme: light;
   }
 }
@@ -38,7 +37,7 @@
   --bg: #fdf6e3; --surface: #eee8d5; --line: #e2dbc6;
   --text: #586e75; --text-2: #657b83; --muted: #93a1a1;
   --mark: rgba(181, 137, 0, .25); --todo-bg: rgba(203, 75, 22, .10); --err-bg: rgba(220, 50, 47, .10);
-  --ready: #86a800; --shimmer: rgba(255, 255, 255, .55);
+  --ready: #86a800;
   color-scheme: light;
 }
 
@@ -575,20 +574,36 @@ img.img-big { max-width: 100%; }
 .state-seg.open { background: var(--yellow); }
 .state-seg.skip { background: var(--muted); }
 
-/* Stapel/VL ohne offene Fragen: dezent hervorgehoben (grüner Rand, leichter Schimmer, funkelndes ✦) */
-.deck.all-set {
-  position: relative; overflow: hidden;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--ready) 12%, transparent), transparent 75%);
-  box-shadow: inset 3px 0 0 var(--ready);
+/* Stapel/VL ohne offene Fragen: leicht grüner Hintergrund, ✦ als kleine Fee mit Sternenstaub */
+.deck.all-set { background: linear-gradient(90deg, color-mix(in srgb, var(--ready) 10%, transparent), transparent 75%); }
+.fairy { position: relative; display: inline-block; width: 14px; height: 14px; line-height: 14px; text-align: center; }
+.fairy-star {
+  display: inline-block; color: var(--ready); font-size: .9rem;
+  text-shadow: 0 0 6px color-mix(in srgb, var(--ready) 70%, transparent);
+  animation: fairy-fly 4.7s ease-in-out infinite;
 }
-.deck.all-set::after {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(105deg, transparent 35%, var(--shimmer) 50%, transparent 65%);
-  transform: translateX(-100%); animation: deck-shimmer 7s ease-in-out 1s infinite;
+.fairy-dust {
+  position: absolute; left: 6px; top: 6px; width: 2px; height: 2px; border-radius: 50%;
+  background: var(--ready); box-shadow: 0 0 3px var(--ready); opacity: 0;
+  animation: fairy-dust 2.3s ease-out infinite;
 }
-.state-spark { color: var(--ready); font-size: .9rem; line-height: 1; display: inline-block; animation: spark-twinkle 2.6s ease-in-out infinite; }
-@keyframes deck-shimmer { 0% { transform: translateX(-100%); } 22%, 100% { transform: translateX(100%); } }
-@keyframes spark-twinkle { 0%, 100% { opacity: .55; transform: scale(.85) rotate(0deg); } 50% { opacity: 1; transform: scale(1.12) rotate(18deg); } }
+.fairy-dust:nth-child(2) { animation-duration: 1.9s; }
+.fairy-dust:nth-child(3) { animation-duration: 2.8s; }
+@keyframes fairy-fly {
+  0%, 100% { transform: translate(0, 0) rotate(0deg) scale(1); }
+  12% { transform: translate(-2px, -4px) rotate(-12deg) scale(.95); }
+  25% { transform: translate(1px, -1px) rotate(4deg) scale(1); }
+  37% { transform: translate(3px, -5px) rotate(16deg) scale(1.12); }
+  50% { transform: translate(0, 0) rotate(0deg) scale(.92); }
+  62% { transform: translate(-3px, -2px) rotate(-8deg) scale(1.05); }
+  75% { transform: translate(2px, -7px) rotate(22deg) scale(1.15); }
+  87% { transform: translate(0, -1px) rotate(-4deg) scale(.97); }
+}
+@keyframes fairy-dust {
+  0% { opacity: 0; transform: translate(0, 0) scale(.6); }
+  20% { opacity: .9; }
+  100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .deck.all-set::after, .state-spark { animation: none; }
+  .fairy-star, .fairy-dust { animation: none; }
 }
