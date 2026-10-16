@@ -34,7 +34,7 @@ Unten wechselst du zwischen den Modulen **Suche**, **Taggen**, **Study**, **Revi
 
 Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.md`), eine **VL** sind alle Notizen eines Stapels mit demselben `#date/JJJJ/MM/TT` (Notizen ohne Datums-Tag stehen unter „Ohne Datum“).
 
-- **Übersicht:** Stapel mit Zahl der offenen Todos, VLs und Fragen, dazu ein schmaler Balken mit dem Review-Status der Fragen (gelb offen, grün bereit, grau nicht abfragen) und „N offen“ – so sieht man, was noch nachzuarbeiten ist. Dasselbe pro VL in der Liste des Stapels.
+- **Übersicht:** Stapel mit Zahl der offenen Todos, VLs und Fragen, dazu ein schmaler Balken mit dem Review-Status der Fragen (gelb offen, grün bereit, grau nicht abfragen) und „N offen“ – so sieht man, was noch nachzuarbeiten ist. Dasselbe pro VL in der Liste des Stapels. Gibt es keine offenen Fragen mehr, wird der Eintrag dezent hervorgehoben (grüner Rand, leichter Schimmer, ✦).
 - **Stapel antippen:** „+ Neue VL heute“ (bzw. „Heutige VL öffnen“), darunter alle offenen Todos des Stapels (antippen springt im Editor zur Stelle) und die VLs, neueste zuerst.
 - **VL antippen:** Alle Fragen der VL als ein Text:
 
@@ -55,7 +55,7 @@ Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.m
 
   Farben (Solarized): Fragen blau, Tags cyan, Todos orange, Antwort-Daten magenta, Code cyan, Fehler rot unterkringelt.
 
-**Review-Status:** Jede Frage ist *offen* (unbearbeitet, Standard), *bereit* (wird im Review abgefragt) oder *nicht abfragen* (z. B. „Welche Modalitäten hat die Klausur?“). Den Punkt vor der Frage antippen – oder am Computer lange auf die Frage-Zeile drücken – schaltet weiter: offen (leerer Kreis) → bereit (grün, Zeile leicht grün) → nicht abfragen (grau, Zeile leicht grau) → offen. Neben dem Titel steht, wie viele Fragen der VL noch offen sind. Gespeichert wird der Status mit **Speichern** (bis dahin im Entwurf) in der Frontmatter der Notiz: `review-state: ready` bzw. `review-state: skip`, bei offen gibt es kein Feld. Notizen ohne Feld, die schon einen SR-Stand haben (also schon wiederholt wurden), gelten als bereit; wird so eine Notiz auf offen gestellt, steht dort `review-state: open`.
+**Review-Status:** Jede Frage ist *offen* (unbearbeitet, Standard), *bereit* (wird im Review abgefragt) oder *nicht abfragen* (z. B. „Welche Modalitäten hat die Klausur?“). Den Punkt vor der Frage antippen schaltet weiter: offen (leerer Kreis) → bereit (grün, Zeile leicht grün) → nicht abfragen (grau, Zeile leicht grau) → offen. Neben dem Titel steht, wie viele Fragen der VL noch offen sind. Gespeichert wird der Status mit **Speichern** (bis dahin im Entwurf) in der Frontmatter der Notiz: `review-state: ready` bzw. `review-state: skip`, bei offen gibt es kein Feld. Notizen ohne Feld, die schon einen SR-Stand haben (also schon wiederholt wurden), gelten als bereit; wird so eine Notiz auf offen gestellt, steht dort `review-state: open`.
 
 - **Speichern** gleicht über den Dateinamen ab (Dateiname = Frage ohne `?`):
   - gleiche Frage → nur der Inhalt wird ersetzt; Frontmatter (SR-Stand) und Tag-Zeile bleiben,

@@ -18,6 +18,8 @@
   --green: #859900;
   --warn: #b58900;
   --todo-bg: rgba(203, 75, 22, .14);
+  --ready: #a9c41c;       /* helleres Grün für „bereit“ (Balken, Glanz) */
+  --shimmer: rgba(255, 255, 255, .07);
   --err-bg: rgba(220, 50, 47, .16);
   --tap: 48px;
   color-scheme: dark;
@@ -28,6 +30,7 @@
     --bg: #fdf6e3; --surface: #eee8d5; --line: #e2dbc6;
     --text: #586e75; --text-2: #657b83; --muted: #93a1a1;
     --mark: rgba(181, 137, 0, .25); --todo-bg: rgba(203, 75, 22, .10); --err-bg: rgba(220, 50, 47, .10);
+    --ready: #86a800; --shimmer: rgba(255, 255, 255, .55);
     color-scheme: light;
   }
 }
@@ -35,6 +38,7 @@
   --bg: #fdf6e3; --surface: #eee8d5; --line: #e2dbc6;
   --text: #586e75; --text-2: #657b83; --muted: #93a1a1;
   --mark: rgba(181, 137, 0, .25); --todo-bg: rgba(203, 75, 22, .10); --err-bg: rgba(220, 50, 47, .10);
+  --ready: #86a800; --shimmer: rgba(255, 255, 255, .55);
   color-scheme: light;
 }
 
@@ -566,7 +570,25 @@ img.img-big { max-width: 100%; }
 .md-editor .cm-q-skip .cm-q { color: var(--muted); }
 .state-info { display: inline-flex; align-items: center; gap: 6px; }
 .state-open-count { color: var(--yellow); font-weight: 600; font-size: .8rem; }
-.state-bar { display: inline-flex; width: 56px; height: 5px; border-radius: 3px; overflow: hidden; background: var(--line); }
-.state-seg.ready { background: var(--green); }
+.state-bar { display: inline-flex; width: 72px; height: 7px; border-radius: 4px; overflow: hidden; background: var(--line); }
+.state-seg.ready { background: var(--ready); }
 .state-seg.open { background: var(--yellow); }
 .state-seg.skip { background: var(--muted); }
+
+/* Stapel/VL ohne offene Fragen: dezent hervorgehoben (grüner Rand, leichter Schimmer, funkelndes ✦) */
+.deck.all-set {
+  position: relative; overflow: hidden;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ready) 12%, transparent), transparent 75%);
+  box-shadow: inset 3px 0 0 var(--ready);
+}
+.deck.all-set::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, var(--shimmer) 50%, transparent 65%);
+  transform: translateX(-100%); animation: deck-shimmer 7s ease-in-out 1s infinite;
+}
+.state-spark { color: var(--ready); font-size: .9rem; line-height: 1; display: inline-block; animation: spark-twinkle 2.6s ease-in-out infinite; }
+@keyframes deck-shimmer { 0% { transform: translateX(-100%); } 22%, 100% { transform: translateX(100%); } }
+@keyframes spark-twinkle { 0%, 100% { opacity: .55; transform: scale(.85) rotate(0deg); } 50% { opacity: 1; transform: scale(1.12) rotate(18deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .deck.all-set::after, .state-spark { animation: none; }
+}

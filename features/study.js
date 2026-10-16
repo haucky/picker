@@ -38,13 +38,16 @@ function todoBadge(n) {
 
 const STATE_LABEL = { open: 'offen', ready: 'bereit', skip: 'nicht abfragen' };
 
-/** Review-Status der Fragen: schmaler Balken (offen/bereit/nicht abfragen) plus „N offen“. */
+/** Keine offenen Fragen mehr (alle bereit oder nicht abfragen)? Dann wird der Eintrag hervorgehoben. */
+const allSet = (notes) => notes.length > 0 && countStates(notes).open === 0;
+
+/** Review-Status der Fragen: schmaler Balken (offen/bereit/nicht abfragen) plus „N offen“ bzw. ✦. */
 function stateBar(deck, notes) {
   if (!notes.length) return null;
   const c = countStates(notes);
   const title = `${c.open} offen · ${c.ready} bereit · ${c.skip} nicht abfragen`;
   return h('span', { class: 'state-info', title },
-    c.open ? h('span', { class: 'state-open-count' }, `${c.open} offen`) : null,
+    c.open ? h('span', { class: 'state-open-count' }, `${c.open} offen`) : h('span', { class: 'state-spark', 'aria-label': 'alles bearbeitet' }, '✦'),
     h('span', { class: 'state-bar' }, ...['ready', 'open', 'skip'].filter((k) => c[k])
       .map((k) => h('span', { class: 'state-seg ' + k, style: `flex-grow: ${c[k]}` }))));
 }
@@ -68,7 +71,7 @@ function renderList() {
     children.push(h('ul', { class: 'decks' }, ...ds.map((d, i) => {
       const groups = groupByDay(notes, d);
       const all = groups.flatMap((g) => g.notes);
-      return h('li', {}, h('button', { type: 'button', class: 'deck', onclick: () => openDeck(i) },
+      return h('li', {}, h('button', { type: 'button', class: 'deck' + (allSet(all) ? ' all-set' : ''), onclick: () => openDeck(i) },
         h('div', { class: 'deck-main' },
           h('div', { class: 'deck-title' }, d.name),
           h('div', { class: 'deck-sub' }, '#' + d.tag)),
@@ -117,7 +120,7 @@ function renderDeck(deck, notes) {
   children.push(h('h2', { class: 'section' }, 'Vorlesungen'));
   if (!groups.length) children.push(h('p', { class: 'hint left' }, `Noch keine Notizen mit #${deck.tag}.`));
   children.push(h('ul', { class: 'decks' }, ...groups.map((g) => h('li', {},
-    h('button', { type: 'button', class: 'deck', onclick: () => openVL(deck, g.day) },
+    h('button', { type: 'button', class: 'deck' + (allSet(g.notes) ? ' all-set' : ''), onclick: () => openVL(deck, g.day) },
       h('div', { class: 'deck-main' },
         h('div', { class: 'deck-title' }, dayLabel(g.day)),
         h('div', { class: 'deck-sub' }, plural(g.notes.length, 'Frage', 'Fragen'))),
@@ -232,10 +235,6 @@ function renderEditor(text) {
     placeholder: 'Erste Frage?\n- Inhalt …\n\nZweite Frage? #tag\n- …\n!!! Todo bis Zeilenende',
     onChange: onInput,
     decorate: studyMarks,
-    longPress: (pos) => {
-      const line = ed.cm.view.state.doc.lineAt(pos).number - 1;
-      if (parseQuestion(ed.cm.view.state.doc.line(line + 1).text)) cycleState(line);
-    },
     openLink: (target) => ui.openLink(target),
     saveImage: ui.saveImage,
     spell: ui.spell,

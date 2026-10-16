@@ -288,39 +288,6 @@ function extraMarks(decorate) {
   }, { decorations: (v) => v.decorations });
 }
 
-/** Langes Drücken mit der Maus (Desktop; auf Touch-Geräten löst es nicht aus): onLongPress(Dokumentposition). */
-function longPress(onLongPress, ms = 500) {
-  return ViewPlugin.fromClass(class {
-    constructor(view) {
-      this.view = view;
-      this.timer = 0;
-      this.start = null;
-      this.cancel = () => { clearTimeout(this.timer); this.timer = 0; };
-      this.onMove = (e) => { if (this.timer && Math.hypot(e.clientX - this.start.x, e.clientY - this.start.y) > 6) this.cancel(); };
-      document.addEventListener('mousemove', this.onMove);
-      document.addEventListener('mouseup', this.cancel);
-    }
-    destroy() {
-      this.cancel();
-      document.removeEventListener('mousemove', this.onMove);
-      document.removeEventListener('mouseup', this.cancel);
-    }
-  }, {
-    eventHandlers: {
-      mousedown(e, view) {
-        this.cancel();
-        if (e.button !== 0 || e.detail > 1) return;
-        this.start = { x: e.clientX, y: e.clientY };
-        this.timer = setTimeout(() => {
-          this.timer = 0;
-          const pos = view.posAtCoords(this.start);
-          if (pos != null) onLongPress(pos);
-        }, ms);
-      },
-    },
-  });
-}
-
 /* ---------- Korrekturvorschläge (Desktop) ---------- */
 
 const setSuggest = StateEffect.define();
@@ -757,7 +724,7 @@ function continueList(view) {
  * opts: { parent, doc, onChange(text), placeholder, decorate(text), openLink(target), resolveImage(link) → Promise<URL>,
  *         spell (siehe spell.js, nur am Desktop übergeben), ai (siehe aicorrect.js, nur am Desktop),
  *         prompt (siehe prompts.js, nur am Desktop),
- *         saveImage(file) → Promise<Markdown-Link>, longPress(pos) (langes Drücken mit der Maus) }
+ *         saveImage(file) → Promise<Markdown-Link> }
  * Gibt { view, value, set(text), focus(), jumpToLine(i), refresh(), destroy() } zurück.
  */
 export function createEditor(opts) {
@@ -786,7 +753,6 @@ export function createEditor(opts) {
     keymap.of([...defaultKeymap, ...historyKeymap]),
     livePreview({ openLink: opts.openLink, resolveImage }),
     opts.decorate ? extraMarks(opts.decorate) : [],
-    opts.longPress ? longPress(opts.longPress) : [],
     opts.placeholder ? cmPlaceholder(opts.placeholder) : [],
     opts.spell ? spellSuggest(opts.spell) : [],
     opts.spell || opts.ai ? wordMenu({ spell: opts.spell, ai: opts.ai }) : [],
