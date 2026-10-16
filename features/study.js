@@ -3,7 +3,7 @@
 import { h } from './dom.js';
 import { createEditor } from './editor.js';
 import { printVL, exportName } from './export.js';
-import { CONFIG_PATH, parseDecks, isConfig, today, dayToGerman } from './srs.js';
+import { CONFIG_PATH, parseDecks, isConfig, today, dayToGerman, reviewState, nextReviewState, countStates } from './srs.js';
 import {
   todos, todoStart, todoText, groupByDay, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
 } from './studydoc.js';
@@ -36,6 +36,19 @@ function todoBadge(n) {
   return n ? h('span', { class: 'todo-badge' }, plural(n, 'Todo', 'Todos')) : null;
 }
 
+const STATE_LABEL = { open: 'offen', ready: 'bereit', skip: 'nicht abfragen' };
+
+/** Review-Status der Fragen: schmaler Balken (offen/bereit/nicht abfragen) plus „N offen“. */
+function stateBar(deck, notes) {
+  if (!notes.length) return null;
+  const c = countStates(notes);
+  const title = `${c.open} offen · ${c.ready} bereit · ${c.skip} nicht abfragen`;
+  return h('span', { class: 'state-info', title },
+    c.open ? h('span', { class: 'state-open-count' }, `${c.open} offen`) : null,
+    h('span', { class: 'state-bar' }, ...['ready', 'open', 'skip'].filter((k) => c[k])
+      .map((k) => h('span', { class: 'state-seg ' + k, style: `flex-grow: ${c[k]}` }))));
+}
+
 /* ---------- Übersicht: Stapel ---------- */
 
 function renderList() {
@@ -61,6 +74,7 @@ function renderList() {
           h('div', { class: 'deck-sub' }, '#' + d.tag)),
         h('div', { class: 'deck-counts' },
           todoBadge(countTodos(all)),
+          stateBar(d, all),
           h('span', { class: 'muted' }, `${plural(groups.filter((g) => g.day != null).length, 'VL', 'VLs')} · ${plural(all.length, 'Frage', 'Fragen')}`))));
     })));
   }
@@ -107,7 +121,7 @@ function renderDeck(deck, notes) {
       h('div', { class: 'deck-main' },
         h('div', { class: 'deck-title' }, dayLabel(g.day)),
         h('div', { class: 'deck-sub' }, plural(g.notes.length, 'Frage', 'Fragen'))),
-      h('div', { class: 'deck-counts' }, todoBadge(countTodos(g.notes))))))));
+      h('div', { class: 'deck-counts' }, todoBadge(countTodos(g.notes)), stateBar(deck, g.notes)))))));
   listEl.replaceChildren(...children);
 }
 
@@ -119,8 +133,8 @@ function loadDraft(key) {
 }
 function storeDraft() {
   try {
-    if (ed.cm.value === ed.base) localStorage.removeItem(ed.draftKey);
-    else localStorage.setItem(ed.draftKey, JSON.stringify({ text: ed.cm.value, base: ed.base }));
+    if (!isDirty()) localStorage.removeItem(ed.draftKey);
+    else localStorage.setItem(ed.draftKey, JSON.stringify({ text: ed.cm.value, base: ed.base, states: Object.fromEntries(ed.states) }));
   } catch { /* egal */ }
 }
 function dropDraft(key) {
@@ -164,8 +178,12 @@ async function openVL(deck, day, focus) {
   const base = buildDoc(originals, tags);
   const key = draftKey(deck, day);
   const draft = loadDraft(key);
+  const states = new Map(originals.map((o) => [o.title, reviewState(o.text)]));
+  const restore = draft && (draft.text !== base || statesDiffer(new Map(Object.entries(draft.states || {})), states));
   ed = {
     deck, day, originals, base, draftKey: key,
+    states: restore && draft.states ? new Map([...states, ...Object.entries(draft.states)]) : new Map(states),
+    statesBase: states,
     folder: folderFor(deck, originals),
     tags,
     issues: roundtripIssues(originals, tags),
@@ -174,8 +192,8 @@ async function openVL(deck, day, focus) {
   document.body.classList.add('study-editing');
   listEl.hidden = true;
   editEl.hidden = false;
-  renderEditor(draft && draft.text !== base ? draft.text : base);
-  if (draft && draft.text !== base) {
+  renderEditor(restore ? draft.text : base);
+  if (restore) {
     ui.toast(draft.base === base ? 'Ungespeicherter Entwurf wiederhergestellt' :
       'Entwurf wiederhergestellt – die Dateien wurden inzwischen geändert, bitte prüfen', 5000);
   }
@@ -214,6 +232,10 @@ function renderEditor(text) {
     placeholder: 'Erste Frage?\n- Inhalt …\n\nZweite Frage? #tag\n- …\n!!! Todo bis Zeilenende',
     onChange: onInput,
     decorate: studyMarks,
+    longPress: (pos) => {
+      const line = ed.cm.view.state.doc.lineAt(pos).number - 1;
+      if (parseQuestion(ed.cm.view.state.doc.line(line + 1).text)) cycleState(line);
+    },
     openLink: (target) => ui.openLink(target),
     saveImage: ui.saveImage,
     spell: ui.spell,
@@ -236,7 +258,8 @@ function update() {
   if (!ed || !ed.cm) return;
   const text = ed.cm.value;
   const { items, errors, warnings } = parseDoc(text);
-  ed.count.textContent = plural(items.length, 'Frage', 'Fragen');
+  const open = items.filter((it) => stateOf(it.title) === 'open').length;
+  ed.count.textContent = plural(items.length, 'Frage', 'Fragen') + (open ? ` · ${open} offen` : '');
   const list = (title, entries) => [
     h('strong', {}, title),
     h('ul', {}, ...entries.sort((a, b) => a.line - b.line).map((e) =>
@@ -246,7 +269,27 @@ function update() {
   ed.errors.replaceChildren(...(errors.length ? list('So kann nicht gespeichert werden:', errors) : []));
   ed.warnings.hidden = !warnings.length;
   ed.warnings.replaceChildren(...(warnings.length ? list('Hinweis:', warnings) : []));
-  ed.save.disabled = busy || text === ed.base;
+  ed.save.disabled = busy || !isDirty();
+}
+
+/* ---------- Review-Status der Fragen (offen → bereit → nicht abfragen) ---------- */
+
+const stateOf = (title) => ed.states.get(title) || 'open';
+
+function statesDiffer(a, b) {
+  for (const k of new Set([...a.keys(), ...b.keys()])) if ((a.get(k) || 'open') !== (b.get(k) || 'open')) return true;
+  return false;
+}
+
+/** Schaltet den Status der Frage in Zeile `line` weiter; gespeichert wird mit dem ganzen Dokument. */
+function cycleState(line) {
+  if (!ed) return;
+  const q = parseQuestion(ed.cm.value.split('\n')[line] || '');
+  if (!q) return;
+  ed.states.set(q.title, nextReviewState(stateOf(q.title)));
+  storeDraft();
+  ed.cm.refresh();
+  update();
 }
 
 /** Markierungen für den Editor: Fragen, Antwort-Daten, Todos, Fehler- und Hinweis-Zeilen (nicht in Codeblöcken). */
@@ -262,7 +305,15 @@ function studyMarks(text) {
     if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; return; }
     if (f) { fence = f[1]; return; }
     const q = parseQuestion(line);
-    if (q) { out.push({ line: i, from: 0, to: q.tagsAt, class: 'cm-q' }); return; }
+    if (q) {
+      out.push({ line: i, from: 0, to: q.tagsAt, class: 'cm-q' });
+      if (ed) {
+        const st = stateOf(q.title);
+        out.push({ line: i, dot: { class: st, title: `Review: ${STATE_LABEL[st]} (antippen zum Ändern)`, onClick: cycleState } });
+        if (st !== 'open') out.push({ line: i, class: 'cm-q-' + st });
+      }
+      return;
+    }
     if (/^::\d{2}\.\d{2}\.\d{4}::\s*$/.test(line)) { out.push({ line: i, from: 0, to: line.length, class: 'cm-date' }); return; }
     const t = todoStart(line);
     if (t >= 0) out.push({ line: i, from: t, to: line.length, class: 'cm-todo' });
@@ -283,7 +334,7 @@ function jumpTo({ title, todo }) {
   jumpToLine(i >= 0 ? i : start);
 }
 
-const isDirty = () => !!ed && !!ed.cm && ed.cm.value !== ed.base;
+const isDirty = () => !!ed && !!ed.cm && (ed.cm.value !== ed.base || statesDiffer(ed.states, ed.statesBase));
 
 function closeEditor({ discard = false } = {}) {
   if (discard) dropDraft(ed.draftKey);
@@ -334,7 +385,8 @@ async function save() {
     for (const k of core.notes.keys()) if (k.toLowerCase() === p) return true;
     return false;
   };
-  const plan = planSave(text, ed.originals, { folder: ed.folder, base: ed.tags, exists });
+  const states = new Map(ed.states);
+  const plan = planSave(text, ed.originals, { folder: ed.folder, base: ed.tags, exists, states });
   if (plan.errors.length) {
     update();
     ui.toast(plan.errors[0].msg + (plan.errors.length > 1 ? ` (+${plan.errors.length - 1})` : ''), 4000);
@@ -343,6 +395,7 @@ async function save() {
   const { updates, creates, deletes } = plan;
   if (!updates.length && !creates.length && !deletes.length) {
     ed.base = text;
+    ed.statesBase = states;
     dropDraft(ed.draftKey);
     update();
     ui.toast('Nichts zu speichern');
@@ -407,6 +460,7 @@ async function save() {
       alert('Nicht alles wurde gespeichert' + (summary ? ` (${summary})` : '') + ':\n\n' + fail.join('\n'));
     } else {
       ed.base = text;
+      ed.statesBase = states;
       dropDraft(ed.draftKey);
       ed.issues = [];
       ui.toast(`Gespeichert ✓ ${summary}`);

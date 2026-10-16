@@ -34,7 +34,7 @@ Unten wechselst du zwischen den Modulen **Suche**, **Taggen**, **Study**, **Revi
 
 Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.md`), eine **VL** sind alle Notizen eines Stapels mit demselben `#date/JJJJ/MM/TT` (Notizen ohne Datums-Tag stehen unter „Ohne Datum“).
 
-- **Übersicht:** Stapel mit Zahl der offenen Todos, VLs und Fragen.
+- **Übersicht:** Stapel mit Zahl der offenen Todos, VLs und Fragen, dazu ein schmaler Balken mit dem Review-Status der Fragen (gelb offen, grün bereit, grau nicht abfragen) und „N offen“ – so sieht man, was noch nachzuarbeiten ist. Dasselbe pro VL in der Liste des Stapels.
 - **Stapel antippen:** „+ Neue VL heute“ (bzw. „Heutige VL öffnen“), darunter alle offenen Todos des Stapels (antippen springt im Editor zur Stelle) und die VLs, neueste zuerst.
 - **VL antippen:** Alle Fragen der VL als ein Text:
 
@@ -51,9 +51,11 @@ Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.m
 
   **Todos:** `!!! Text bis Zeilenende` (am Zeilenanfang, nach einem Listenzeichen oder nach einem Leerzeichen; „Wichtig!!!“ zählt nicht). Erledigt = Zeile löschen.
 
-  **Tags hinter der Frage:** Die Grund-Tags der VL (Stapel-Tag bzw. dessen Untertag und `#date/…`) werden nicht angezeigt. Alle anderen Tags aus der Tag-Zeile einer Notiz stehen hinter ihrer Frage und lassen sich dort ändern, hinzufügen oder löschen (z. B. `#not-for-exam`). Mit `- ohne: #not-for-exam` im Stapel in `Review.md` wird so eine Frage nicht mehr abgefragt, bleibt aber in der VL.
+  **Tags hinter der Frage:** Die Grund-Tags der VL (Stapel-Tag bzw. dessen Untertag und `#date/…`) werden nicht angezeigt. Alle anderen Tags aus der Tag-Zeile einer Notiz stehen hinter ihrer Frage und lassen sich dort ändern, hinzufügen oder löschen (z. B. `#not-for-exam`).
 
   Farben (Solarized): Fragen blau, Tags cyan, Todos orange, Antwort-Daten magenta, Code cyan, Fehler rot unterkringelt.
+
+**Review-Status:** Jede Frage ist *offen* (unbearbeitet, Standard), *bereit* (wird im Review abgefragt) oder *nicht abfragen* (z. B. „Welche Modalitäten hat die Klausur?“). Den Punkt vor der Frage antippen – oder am Computer lange auf die Frage-Zeile drücken – schaltet weiter: offen (leerer Kreis) → bereit (grün, Zeile leicht grün) → nicht abfragen (grau, Zeile leicht grau) → offen. Neben dem Titel steht, wie viele Fragen der VL noch offen sind. Gespeichert wird der Status mit **Speichern** (bis dahin im Entwurf) in der Frontmatter der Notiz: `review-state: ready` bzw. `review-state: skip`, bei offen gibt es kein Feld. Notizen ohne Feld, die schon einen SR-Stand haben (also schon wiederholt wurden), gelten als bereit; wird so eine Notiz auf offen gestellt, steht dort `review-state: open`.
 
 - **Speichern** gleicht über den Dateinamen ab (Dateiname = Frage ohne `?`):
   - gleiche Frage → nur der Inhalt wird ersetzt; Frontmatter (SR-Stand) und Tag-Zeile bleiben,
@@ -71,15 +73,14 @@ Notizen wie Karteikarten wiederholen: **Vorderseite = Dateiname**, **Rückseite 
 **Welche Notizen?** Das steht in `Review.md` im obersten Ordner des Vaults (die App bietet an, sie anzulegen). Jede Überschrift ist ein Stapel:
 
 ```markdown
-## TILs
-- tag: #life/diary
-
 ## Datenbanken WS26
 - tag: #uni/dbs
-- ohne: #uni/dbs/orga
+
+## Analysis I
+- tag: #uni/ana1
 ```
 
-Jeder Stapel hat genau einen Tag hinter `tag:` (bei `tags:` mit mehreren zählt der erste). Eine Notiz gehört zum Stapel, wenn sie diesen Tag hat (Untertags zählen mit) und keinen hinter `ohne:`. `Review.md` selbst wird nie abgefragt.
+Jeder Stapel hat genau einen Tag hinter `tag:` (bei `tags:` mit mehreren zählt der erste). Eine Notiz gehört zum Stapel, wenn sie diesen Tag hat (Untertags zählen mit). Abgefragt werden nur Notizen mit Review-Status *bereit* (siehe Study); offene und „nicht abfragen“ kommen nie dran. `Review.md` selbst wird nie abgefragt. (Frühere `ohne:`-Zeilen werden ignoriert.)
 
 **Spaced Repetition** wie im Obsidian-Plugin [Spaced Repetition](https://github.com/st3v3nmw/obsidian-spaced-repetition) (Notiz-Review, Algorithmus SM-2-OSR mit dessen Standardwerten: Start-Ease 250, Leicht-Bonus 1,3, Schwer halbiert den Abstand, Lastausgleich). Der Stand steht wie beim Plugin in der Frontmatter:
 
@@ -101,7 +102,7 @@ Notizen ohne diese Felder sind „neu“; die Felder werden beim ersten Bewerten
 
 - Titel antippen öffnet die Notiz, **Antwort zeigen** deckt die Rückseite auf. Eigene Antworten (`::TT.MM.JJJJ::`-Blöcke) stehen eingeklappt darunter.
 - **✍️ Antwort notieren** hängt `::TT.MM.JJJJ::` + `- Antwort` ans Dateiende (wie „New Answer“ im Obsidian-Snippet).
-- **Schwer / Gut / Leicht** zeigen den nächsten Abstand und schreiben sofort in die Datei. **↶ Rückgängig** stellt die letzte Bewertung wieder her (nur, wenn die Datei seitdem nicht geändert wurde). **↷ Überspringen** lässt die Karte unverändert.
+- **Schwer / Gut / Leicht** zeigen den nächsten Abstand und schreiben sofort in die Datei. **↶ Rückgängig** stellt die letzte Bewertung wieder her (nur, wenn die Datei seitdem nicht geändert wurde). **↷ Überspringen** lässt die Karte unverändert. **⊘ Aussortieren** setzt den Review-Status auf *nicht abfragen* (z. B. für Orga-Fragen; rückgängig machbar, im Study-Editor wieder änderbar).
 - Fällige Karten kommen zuerst (am längsten überfällige oben), danach neue: älteste VL (`#date/…`) zuerst, innerhalb einer VL in der Reihenfolge aus dem Study-Editor (`study-order`).
 - Tastatur am Laptop: Leertaste/Enter = Antwort zeigen, 1/2/3 = Schwer/Gut/Leicht, Enter = Erledigt, u = Rückgängig.
 

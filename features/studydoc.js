@@ -1,7 +1,7 @@
 // Study-Logik ohne DOM: alle TILs einer Vorlesung (VL = Datum in einem Stapel) als ein Fließtext-Dokument
 // und der Abgleich dieses Dokuments mit den Dateien (ändern, neu anlegen, löschen).
 import { parseFrontmatter, setFrontmatterFields, splitFrontmatter, parseTags } from '../core.js';
-import { inDeck, isConfig, dayToTagDate } from './srs.js';
+import { inDeck, isConfig, dayToTagDate, reviewState, setReviewState } from './srs.js';
 
 export const ORDER_FIELD = 'study-order';
 const TODO_RE = /(^|\s)!!!/;
@@ -61,13 +61,11 @@ export function tagLineTags(text) {
 
 /**
  * Notizen eines Stapels nach VL: [{ day (null = ohne Datum), notes }], neueste VL zuerst.
- * `ohne:` aus Review.md gilt hier nicht: ausgenommene Fragen gehören weiter zur VL, sie werden nur nicht abgefragt.
  */
 export function groupByDay(notes, deck) {
   const groups = new Map();
-  const all = { ...deck, without: [] };
   for (const n of notes) {
-    if (isConfig(n.path) || !inDeck(n, all)) continue;
+    if (isConfig(n.path) || !inDeck(n, deck)) continue;
     const day = dayOfNote(n);
     if (!groups.has(day)) groups.set(day, []);
     groups.get(day).push(n);
@@ -217,13 +215,15 @@ export function roundtripIssues(notes, base) {
 /* ---------- Abgleich ---------- */
 
 /**
- * Notiz mit neuem Inhalt, neuen abweichenden Tags und Reihenfolge. Frontmatter (SR-Stand) und Zeilenumbrüche
- * bleiben; die Tag-Zeile wird nur angefasst, wenn sich die abweichenden Tags geändert haben.
+ * Notiz mit neuem Inhalt, neuen abweichenden Tags, Reihenfolge und ggf. Review-Status (`state`, siehe srs.js).
+ * Frontmatter (SR-Stand) und Zeilenumbrüche bleiben; die Tag-Zeile wird nur angefasst, wenn sich die abweichenden
+ * Tags geändert haben.
  */
-export function applyItem(text, { body, tags }, order, base) {
+export function applyItem(text, { body, tags }, order, base, state) {
   const lower = new Set(base.map((t) => t.toLowerCase()));
   const keep = tagLineTags(text).filter((t) => lower.has(t.toLowerCase()));
   if (extraTags(text, base).join(' ') !== tags.join(' ')) text = setTagLine(text, [...keep, ...tags]);
+  if (state && reviewState(text) !== state) text = setReviewState(text, state);
   return applyBody(text, body, order);
 }
 
@@ -240,13 +240,15 @@ export function applyBody(text, body, order) {
   return out;
 }
 
-export function newNoteText(tags, body, order) {
-  return `---\n${ORDER_FIELD}: ${order}\n---\n${tags.map((t) => '#' + t).join(' ')}\n${body ? body + '\n' : ''}`;
+export function newNoteText(tags, body, order, state = 'open') {
+  const text = `---\n${ORDER_FIELD}: ${order}\n---\n${tags.map((t) => '#' + t).join(' ')}\n${body ? body + '\n' : ''}`;
+  return state === 'open' ? text : setReviewState(text, state);
 }
 
 /**
  * Plant das Speichern. `originals`: [{ path, title, text }] = Stand der VL beim Öffnen.
- * ctx: { folder, base (Grund-Tags), exists(path) → bool (Groß-/Kleinschreibung egal) }.
+ * ctx: { folder, base (Grund-Tags), exists(path) → bool (Groß-/Kleinschreibung egal),
+ *        states: Map Frage-Titel → Review-Status (optional; fehlende Titel bleiben wie sie sind bzw. open) }.
  * Gibt { errors, updates, creates, deletes } zurück; jede Änderung als { path, title, text? }.
  */
 export function planSave(doc, originals, ctx) {
@@ -262,11 +264,11 @@ export function planSave(doc, originals, ctx) {
     const o = byTitle.get(it.title);
     if (o) {
       used.add(o.path);
-      const text = applyItem(o.text, it, i + 1, ctx.base);
+      const text = applyItem(o.text, it, i + 1, ctx.base, ctx.states?.get(it.title));
       if (text !== o.text) updates.push({ path: o.path, title: o.title, text });
     } else {
       const path = (ctx.folder ? ctx.folder + '/' : '') + it.title + '.md';
-      creates.push({ path, title: it.title, line: it.line, text: newNoteText([...ctx.base, ...it.tags], it.body, i + 1) });
+      creates.push({ path, title: it.title, line: it.line, text: newNoteText([...ctx.base, ...it.tags], it.body, i + 1, ctx.states?.get(it.title)) });
     }
   });
   const deletes = originals.filter((o) => !used.has(o.path)).map((o) => ({ path: o.path, title: o.title }));

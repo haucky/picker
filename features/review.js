@@ -5,6 +5,7 @@ import { renderMarkdown } from './markdown.js';
 import {
   CONFIG_PATH, RESPONSES, parseDecks, buildCards, srState, nextState, writeState, dueDateCounts,
   formatInterval, setReviewed, seedDay, splitAnswers, appendAnswer, cardBody, today, isConfig, FIXED_INTERVALS,
+  setReviewState,
 } from './srs.js';
 import { studyOrder } from './studydoc.js';
 
@@ -16,11 +17,12 @@ const FIXED = 'fixed';
 const CONFIG_TEMPLATE = `# Review
 
 Jede Überschrift ist ein Stapel. Eine Notiz gehört dazu, wenn sie den Tag hinter „tag:“ hat
-(Untertags zählen mit) und keinen hinter „ohne:“. Notizen mit festem Intervall (review/daily, weekly,
-monthly) werden nur nach ihrem festen Intervall wiederholt.
+(Untertags zählen mit). Abgefragt werden nur Fragen mit Review-Status „bereit“ (im Study-Editor über den
+Punkt vor der Frage setzen). Notizen mit festem Intervall (review/daily, weekly, monthly) werden nur nach
+ihrem festen Intervall wiederholt.
 
-## TILs
-- tag: #life/diary
+## Datenbanken WS26
+- tag: #uni/dbs
 `;
 
 let ui, core, root;
@@ -115,7 +117,7 @@ function renderOverview() {
     children.push(h('div', { class: 'notice' },
       h('strong', {}, `Keine ${CONFIG_PATH} im Vault.`),
       h('p', {}, `Welche Notizen per Spaced Repetition wiederholt werden, steht in ${CONFIG_PATH} im obersten Ordner ` +
-        'des Vaults. Jede Überschrift ist ein Stapel, darunter „- tag: #…“ und optional „- ohne: #…“.'),
+        'des Vaults. Jede Überschrift ist ein Stapel, darunter „- tag: #…“.'),
       h('button', { type: 'button', class: 'btn small', onclick: createConfig }, `${CONFIG_PATH} anlegen`)));
   } else {
     if (!ds.length) {
@@ -312,6 +314,9 @@ function actions(card) {
   return h('div', { class: 'card-actions' },
     card ? h('button', { type: 'button', class: 'link', onclick: () => ui.openNote(card.path) }, '✏️ Bearbeiten') : null,
     card ? h('button', { type: 'button', class: 'link', onclick: skip }, '↷ Überspringen') : null,
+    card && card.kind === 'sr'
+      ? h('button', { type: 'button', class: 'link', onclick: retire, title: 'Review-Status „nicht abfragen“ (wieder änderbar im Study-Editor)' }, '⊘ Aussortieren')
+      : null,
     session.history.length ? h('button', { type: 'button', class: 'link', onclick: undo }, '↶ Rückgängig') : null);
 }
 
@@ -350,8 +355,26 @@ async function rate(response) {
       }
       return after;
     });
-    session.history.push({ path: card.path, index: session.index, before, after });
+    session.history.push({ path: card.path, index: session.index, before, after, rated: true });
     session.rated++;
+    advance();
+  } catch (err) {
+    ui.toast('Speichern fehlgeschlagen: ' + err.message, 5000);
+  } finally {
+    busy = false;
+  }
+}
+
+/** Karte nicht mehr abfragen (Review-Status skip), z. B. Orga-Fragen; Rückgängig wie bei einer Bewertung. */
+async function retire() {
+  const card = current();
+  if (!card || busy) return;
+  busy = true;
+  let before, after;
+  try {
+    await core.update(card.path, (text) => { before = text; after = setReviewState(text, 'skip'); return after; });
+    session.history.push({ path: card.path, index: session.index, before, after, rated: false });
+    ui.toast('Aussortiert – wird nicht mehr abgefragt');
     advance();
   } catch (err) {
     ui.toast('Speichern fehlgeschlagen: ' + err.message, 5000);
@@ -374,9 +397,9 @@ async function undo() {
     if (changed) {
       ui.toast('Datei wurde inzwischen geändert – nicht rückgängig gemacht.', 4000);
     } else {
-      session.rated--;
+      if (last.rated) session.rated--;
       session.index = last.index;
-      session.revealed = true;
+      session.revealed = last.rated;
       session.answering = false;
       renderCard();
     }

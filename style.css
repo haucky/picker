@@ -551,3 +551,22 @@ img.img-big { max-width: 100%; }
   content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 8px; vertical-align: -1px;
   border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: cm-spin .8s linear infinite;
 }
+
+/* Review-Status der Fragen (Study): Punkt vor der Frage, leichte Hintergrundfarbe, Balken in den Listen */
+.md-editor .cm-dot-wrap { display: inline-block; vertical-align: middle; margin-right: 6px; }
+.md-editor .cm-dot {
+  display: block; width: 11px; height: 11px; border-radius: 50%; cursor: pointer; position: relative;
+  border: 1.5px solid var(--muted); background: transparent;
+}
+.md-editor .cm-dot::before { content: ""; position: absolute; inset: -9px; } /* größere Tippfläche */
+.md-editor .cm-dot.ready { border-color: var(--green); background: var(--green); }
+.md-editor .cm-dot.skip { border-color: var(--muted); background: var(--muted); }
+.md-editor .cm-q-ready { background: rgba(133, 153, 0, .13); }
+.md-editor .cm-q-skip { background: rgba(147, 161, 161, .16); }
+.md-editor .cm-q-skip .cm-q { color: var(--muted); }
+.state-info { display: inline-flex; align-items: center; gap: 6px; }
+.state-open-count { color: var(--yellow); font-weight: 600; font-size: .8rem; }
+.state-bar { display: inline-flex; width: 56px; height: 5px; border-radius: 3px; overflow: hidden; background: var(--line); }
+.state-seg.ready { background: var(--green); }
+.state-seg.open { background: var(--yellow); }
+.state-seg.skip { background: var(--muted); }

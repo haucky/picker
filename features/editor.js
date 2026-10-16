@@ -238,26 +238,87 @@ function livePreview({ openLink, resolveImage }) {
 
 /* ---------- Zusätzliche Markierungen (z. B. Study: Fragen, Todos, Fehler) ---------- */
 
+/** Punkt am Zeilenanfang (z. B. Review-Status einer Frage); Klick ruft onClick(Zeilenindex) auf. */
+class DotWidget extends WidgetType {
+  constructor(cls, title, onClick) { super(); this.cls = cls; this.title = title; this.onClick = onClick; }
+  eq(o) { return o.cls === this.cls && o.title === this.title && o.onClick === this.onClick; }
+  toDOM(view) {
+    const wrap = document.createElement('span');
+    wrap.className = 'cm-dot-wrap';
+    const b = document.createElement('span');
+    b.className = 'cm-dot ' + this.cls;
+    b.title = this.title;
+    b.setAttribute('role', 'button');
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.onClick(view.state.doc.lineAt(view.posAtDOM(wrap)).number - 1);
+    });
+    wrap.append(b);
+    return wrap;
+  }
+  ignoreEvent() { return true; }
+}
+
+const refreshMarks = StateEffect.define();
+
 /**
- * `decorate(text)` → [{ line (0-basiert), class } | { line, from, to, class }] (from/to = Spalten).
- * Wird bei jeder Änderung für das ganze Dokument neu berechnet (für Dokumente in Notizgröße unkritisch).
+ * `decorate(text)` → [{ line (0-basiert), class } | { line, from, to, class } | { line, dot: { class, title, onClick } }]
+ * (from/to = Spalten). Wird bei jeder Änderung (und bei refresh()) für das ganze Dokument neu berechnet (für
+ * Dokumente in Notizgröße unkritisch).
  */
 function extraMarks(decorate) {
   return ViewPlugin.fromClass(class {
     constructor(view) { this.decorations = this.build(view); }
-    update(u) { if (u.docChanged) this.decorations = this.build(u.view); }
+    update(u) {
+      if (u.docChanged || u.transactions.some((t) => t.effects.some((e) => e.is(refreshMarks)))) this.decorations = this.build(u.view);
+    }
     build(view) {
       const doc = view.state.doc;
       const out = [];
       for (const d of decorate(doc.toString())) {
         if (d.line >= doc.lines) continue;
         const l = doc.line(d.line + 1);
-        if (d.from == null) out.push(Decoration.line({ class: d.class }).range(l.from));
+        if (d.dot) out.push(Decoration.widget({ widget: new DotWidget(d.dot.class, d.dot.title, d.dot.onClick), side: -1 }).range(l.from));
+        else if (d.from == null) out.push(Decoration.line({ class: d.class }).range(l.from));
         else if (d.to > d.from) out.push(Decoration.mark({ class: d.class }).range(l.from + d.from, l.from + Math.min(d.to, l.length)));
       }
       return Decoration.set(out, true);
     }
   }, { decorations: (v) => v.decorations });
+}
+
+/** Langes Drücken mit der Maus (Desktop; auf Touch-Geräten löst es nicht aus): onLongPress(Dokumentposition). */
+function longPress(onLongPress, ms = 500) {
+  return ViewPlugin.fromClass(class {
+    constructor(view) {
+      this.view = view;
+      this.timer = 0;
+      this.start = null;
+      this.cancel = () => { clearTimeout(this.timer); this.timer = 0; };
+      this.onMove = (e) => { if (this.timer && Math.hypot(e.clientX - this.start.x, e.clientY - this.start.y) > 6) this.cancel(); };
+      document.addEventListener('mousemove', this.onMove);
+      document.addEventListener('mouseup', this.cancel);
+    }
+    destroy() {
+      this.cancel();
+      document.removeEventListener('mousemove', this.onMove);
+      document.removeEventListener('mouseup', this.cancel);
+    }
+  }, {
+    eventHandlers: {
+      mousedown(e, view) {
+        this.cancel();
+        if (e.button !== 0 || e.detail > 1) return;
+        this.start = { x: e.clientX, y: e.clientY };
+        this.timer = setTimeout(() => {
+          this.timer = 0;
+          const pos = view.posAtCoords(this.start);
+          if (pos != null) onLongPress(pos);
+        }, ms);
+      },
+    },
+  });
 }
 
 /* ---------- Korrekturvorschläge (Desktop) ---------- */
@@ -696,8 +757,8 @@ function continueList(view) {
  * opts: { parent, doc, onChange(text), placeholder, decorate(text), openLink(target), resolveImage(link) → Promise<URL>,
  *         spell (siehe spell.js, nur am Desktop übergeben), ai (siehe aicorrect.js, nur am Desktop),
  *         prompt (siehe prompts.js, nur am Desktop),
- *         saveImage(file) → Promise<Markdown-Link> }
- * Gibt { view, value, set(text), focus(), jumpToLine(i), destroy() } zurück.
+ *         saveImage(file) → Promise<Markdown-Link>, longPress(pos) (langes Drücken mit der Maus) }
+ * Gibt { view, value, set(text), focus(), jumpToLine(i), refresh(), destroy() } zurück.
  */
 export function createEditor(opts) {
   const urls = new Map(); // Bild-Link → Object-URL (einmal auflösen, beim Neuladen freigeben)
@@ -725,6 +786,7 @@ export function createEditor(opts) {
     keymap.of([...defaultKeymap, ...historyKeymap]),
     livePreview({ openLink: opts.openLink, resolveImage }),
     opts.decorate ? extraMarks(opts.decorate) : [],
+    opts.longPress ? longPress(opts.longPress) : [],
     opts.placeholder ? cmPlaceholder(opts.placeholder) : [],
     opts.spell ? spellSuggest(opts.spell) : [],
     opts.spell || opts.ai ? wordMenu({ spell: opts.spell, ai: opts.ai }) : [],
@@ -753,6 +815,8 @@ export function createEditor(opts) {
       view.focus();
       view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'center' }) });
     },
+    /** decorate() neu auswerten (wenn sich etwas außerhalb des Texts geändert hat). */
+    refresh() { view.dispatch({ effects: refreshMarks.of(null) }); },
     destroy() { freeUrls(); view.destroy(); },
   };
 }

@@ -163,20 +163,17 @@ export function setReviewed(text, day) {
 
 /**
  * Stapel aus Review.md: jede Überschrift ist ein Stapel, darunter `tag: #a` (genau ein Tag; `tags:` geht auch,
- * dann zählt der erste) und optional `ohne: #c #d`.
- * Gibt [{ name, tag (Originalschreibweise), without: [klein] }] zurück (nur Stapel mit Tag).
+ * dann zählt der erste). Alte `ohne:`-Zeilen werden ignoriert (ersetzt durch den Review-Status „skip“).
+ * Gibt [{ name, tag (Originalschreibweise) }] zurück (nur Stapel mit Tag).
  */
 export function parseDecks(text) {
   const decks = [];
   let cur = null;
   for (const line of splitFrontmatter(text).body.split(/\r?\n/)) {
     const hm = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(line);
-    if (hm) { cur = { name: hm[1], tag: null, without: [] }; decks.push(cur); continue; }
-    const km = /^\s*(?:[-*+]\s+)?(tags?|ohne)\s*:\s*(.*)$/i.exec(line);
-    if (!km || !cur) continue;
-    const tags = parseTags(' ' + km[2]);
-    if (km[1].toLowerCase() === 'ohne') cur.without.push(...tags.map((t) => t.toLowerCase()));
-    else cur.tag ??= tags[0] || null;
+    if (hm) { cur = { name: hm[1], tag: null }; decks.push(cur); continue; }
+    const km = /^\s*(?:[-*+]\s+)?tags?\s*:\s*(.*)$/i.exec(line);
+    if (km && cur) cur.tag ??= parseTags(' ' + km[1])[0] || null;
   }
   return decks.filter((d) => d.tag);
 }
@@ -185,7 +182,37 @@ const hasTag = (tagsLower, wanted) => tagsLower.some((t) => wanted.some((w) => t
 
 /** Gehört die Notiz zum Stapel? */
 export function inDeck(note, deck) {
-  return hasTag(note.tagsLower, [deck.tag.toLowerCase()]) && !hasTag(note.tagsLower, deck.without);
+  return hasTag(note.tagsLower, [deck.tag.toLowerCase()]);
+}
+
+/* ---------- Review-Status ---------- */
+
+// Pro Frage: open (unbearbeitet, Standard), ready (wird abgefragt), skip (nicht abfragen, z. B. Orga-Fragen).
+export const STATE_FIELD = 'review-state';
+export const STATES = ['open', 'ready', 'skip'];
+
+/** Status ohne Feld: Notizen mit SR-Stand wurden schon wiederholt und gelten als ready, sonst open. */
+const implicitState = (text) => (srState(text) ? 'ready' : 'open');
+
+/** Status aus der Frontmatter (`review-state`), ohne Feld siehe implicitState. */
+export function reviewState(text) {
+  const v = String(parseFrontmatter(text)[STATE_FIELD] || '').toLowerCase();
+  return STATES.includes(v) ? v : implicitState(text);
+}
+
+/** Setzt den Status; das Feld steht nur in der Datei, wenn es vom Standard abweicht (open meist ohne Feld). */
+export function setReviewState(text, state) {
+  const without = setFrontmatterFields(text, { [STATE_FIELD]: null });
+  return reviewState(without) === state ? without : setFrontmatterFields(text, { [STATE_FIELD]: state });
+}
+
+export const nextReviewState = (state) => STATES[(STATES.indexOf(state) + 1) % STATES.length];
+
+/** { open, ready, skip } über Notizen. */
+export function countStates(notes) {
+  const out = { open: 0, ready: 0, skip: 0 };
+  for (const n of notes) out[reviewState(n.text)]++;
+  return out;
 }
 
 export const isConfig = (path) => path.toLowerCase() === CONFIG_PATH.toLowerCase();
@@ -194,7 +221,7 @@ export const isConfig = (path) => path.toLowerCase() === CONFIG_PATH.toLowerCase
 
 /**
  * Alle Karten am Tag `day`. Feste Intervalle haben Vorrang: eine Notiz mit #review/daily|weekly|monthly
- * ist nie zusätzlich eine SR-Karte.
+ * ist nie zusätzlich eine SR-Karte. Aus den Stapeln zählen nur Notizen mit Review-Status ready.
  * Karte: { path, kind: 'sr'|'fixed', decks: [Index], isNew, due, overdue, fixedType, unseeded }
  */
 export function buildCards(notes, decks, day) {
@@ -209,6 +236,7 @@ export function buildCards(notes, decks, day) {
         unseeded: last == null, due, overdue: day - due });
       continue;
     }
+    if (reviewState(n.text) !== 'ready') continue;
     const idx = [];
     decks.forEach((d, i) => { if (inDeck(n, d)) idx.push(i); });
     if (!idx.length) continue;
