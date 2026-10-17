@@ -29,6 +29,12 @@ function dayLabel(day) {
   return `${wd} ${dayToGerman(day)}`;
 }
 
+/** Kurz für enge Kopfzeilen: „Mi 14.10.“ (ohne Jahr). */
+function shortDay(day) {
+  if (day == null) return 'Ohne Datum';
+  return dayLabel(day).replace(/(\d{2}\.\d{2}\.)\d{4}$/, '$1');
+}
+
 const countTodos = (notes) => notes.reduce((s, n) => s + todos(n.text).length, 0);
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
@@ -217,10 +223,13 @@ async function openVL(deck, day, focus, btn) {
 }
 
 function renderEditor(text) {
-  const title = h('h1', { class: 'ellipsis' }, `${ed.deck.name} · ${dayLabel(ed.day)}`);
+  // Titel zweizeilig (Stapel, darunter Zähler und Datum – Wichtigstes vorn), damit er neben PDF/Speichern auch auf dem Handy Platz hat
+  ed.count = h('span', { class: 'count' });
+  const title = h('div', { class: 'bar-title' },
+    h('h1', { class: 'ellipsis' }, ed.deck.name),
+    h('div', { class: 'bar-sub ellipsis' }, ed.count, ' · ', shortDay(ed.day)));
   ed.save = h('button', { type: 'button', class: 'btn small', onclick: save }, 'Speichern');
   const pdf = h('button', { type: 'button', class: 'btn small', onclick: exportPDF, title: 'Als PDF exportieren (Drucken → Als PDF speichern)' }, 'PDF');
-  ed.count = h('span', { class: 'count' });
   ed.errors = h('div', { class: 'notice err', hidden: true });
   ed.warnings = h('div', { class: 'notice', hidden: true });
   const host = h('div', { class: 'md-editor', 'aria-label': 'Fragen und Inhalte' });
@@ -229,7 +238,7 @@ function renderEditor(text) {
   const parts = [
     h('header', { class: 'bar' },
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zurück', onclick: leave }, '←'),
-      title, ed.count, pdf, ed.save),
+      title, pdf, ed.save),
     h('p', { class: 'path' }, ...info),
   ];
   if (ed.issues.length) {
@@ -273,7 +282,7 @@ function update() {
   const text = ed.cm.value;
   const { items, errors, warnings } = parseDoc(text);
   const open = items.filter((it) => stateOf(it.title) === 'open').length;
-  ed.count.textContent = plural(items.length, 'Frage', 'Fragen') + (open ? ` · ${open} offen` : '');
+  ed.count.textContent = (open ? `${open} offen · ` : '') + plural(items.length, 'Frage', 'Fragen');
   const list = (title, entries) => [
     h('strong', {}, title),
     h('ul', {}, ...entries.sort((a, b) => a.line - b.line).map((e) =>
