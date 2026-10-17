@@ -1,6 +1,6 @@
 // Feature: Notizen wiederholen – Spaced Repetition (Stapel aus Review.md, Stand in der Frontmatter wie beim
 // Obsidian-Plugin) und feste Intervalle (#review/daily|weekly|monthly). Vorderseite = Dateiname, Rückseite = Inhalt.
-import { h } from './dom.js';
+import { h, stableView } from './dom.js';
 import { renderMarkdown } from './markdown.js';
 import {
   CONFIG_PATH, RESPONSES, parseDecks, buildCards, srState, nextState, writeState, dueDateCounts,
@@ -26,7 +26,7 @@ ihrem festen Intervall wiederholt.
 `;
 
 let ui, core, root;
-let overviewEl, sessionEl;
+let overviewEl, sessionEl, overviewView;
 let session = null;  // { key, title, queue: [Karte], index, revealed, answering, history: [], rated }
 let objectUrls = [];
 
@@ -75,7 +75,7 @@ function renderOverview() {
 
   if (!core.notes.size) {
     children.push(h('p', { class: 'hint left' }, core.syncing ? 'Index wird aufgebaut …' : 'Keine Notizen.'));
-    overviewEl.replaceChildren(...children);
+    overviewView.show(children);
     return;
   }
 
@@ -126,7 +126,7 @@ function renderOverview() {
     children.push(h('button', { type: 'button', class: 'link', onclick: () => ui.openNote(cfg.path) }, `${CONFIG_PATH} bearbeiten`));
   }
 
-  overviewEl.replaceChildren(...children);
+  overviewView.show(children);
 }
 
 async function createConfig() {
@@ -422,6 +422,7 @@ export default {
     core = ui.core;
     overviewEl = h('div', { class: 'review-overview' });
     sessionEl = h('div', { class: 'review-session', hidden: true });
+    overviewView = stableView(overviewEl);
     root.append(overviewEl, sessionEl);
 
     // Zurück-Geste beendet die Sitzung (der Editor legt seinen eigenen Eintrag darüber).
@@ -439,7 +440,7 @@ export default {
       }
       if (!queued) {
         queued = true;
-        requestAnimationFrame(() => { queued = false; renderOverview(); });
+        requestAnimationFrame(() => { queued = false; overviewView.request(renderOverview); });
       }
     });
 

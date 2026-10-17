@@ -31,3 +31,36 @@ export function highlighted(text, re) {
   frag.append(text.slice(last));
   return frag;
 }
+
+/**
+ * Für Listen, die bei Hintergrund-Änderungen (Abgleich) neu gezeichnet werden, ohne Tipps zu verschlucken:
+ * show() ersetzt den Inhalt nur, wenn er sich wirklich geändert hat; request(render) zeichnet erst, wenn kein
+ * Finger/keine Maus auf der Liste liegt und hold() false ist (sonst wird es nachgeholt, flush()).
+ * Hintergrund: Wird ein Eintrag zwischen Drücken und Loslassen ersetzt, kommt der Klick nie an.
+ */
+export function stableView(el, { hold = () => false } = {}) {
+  let pressing = false;
+  let pending = null;
+  const flush = () => {
+    if (!pending || pressing || hold()) return;
+    const render = pending;
+    pending = null;
+    render();
+  };
+  el.addEventListener('pointerdown', () => { pressing = true; });
+  const release = () => {
+    if (!pressing) return;
+    pressing = false;
+    if (pending) setTimeout(flush, 400); // erst nach dem click-Event
+  };
+  document.addEventListener('pointerup', release);
+  document.addEventListener('pointercancel', release);
+  return {
+    show(children) {
+      const next = h('div', {}, ...children);
+      if (next.innerHTML !== el.innerHTML) el.replaceChildren(...next.childNodes);
+    },
+    request(render) { pending = render; flush(); },
+    flush,
+  };
+}

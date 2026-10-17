@@ -1,6 +1,6 @@
 // Feature: Vorlesungen durcharbeiten. Stapel aus Review.md → VLs (Datum) → alle TILs einer VL als ein
 // Fließtext-Dokument („Frage?“-Zeile + Inhalt). Speichern ändert, legt an und verschiebt in den Papierkorb.
-import { h } from './dom.js';
+import { h, stableView } from './dom.js';
 import { createEditor } from './editor.js';
 import { printVL, exportName } from './export.js';
 import { CONFIG_PATH, parseDecks, isConfig, today, dayToGerman, reviewState, nextReviewState, countStates } from './srs.js';
@@ -11,7 +11,7 @@ import {
 const DRAFT_PREFIX = 'study-draft:';
 
 let ui, core, root;
-let listEl, editEl;
+let listEl, editEl, listView;
 let deckIndex = null;   // geöffneter Stapel (Index in decks())
 let ed = null;          // offener VL-Editor, siehe openVL()
 let busy = false;
@@ -37,23 +37,6 @@ function todoBadge(n) {
 }
 
 const STATE_LABEL = { open: 'offen', ready: 'bereit', skip: 'nicht abfragen' };
-
-/**
- * Ersetzt die Liste nur, wenn sich ihr Inhalt geändert hat, und nie, während ein Finger/die Maus auf ihr liegt:
- * sonst verpufft ein Tipp, wenn der Hintergrund-Abgleich die Liste zwischen Drücken und Loslassen neu zeichnet.
- */
-let pressing = false;
-let pendingRender = false;
-function showList(children) {
-  const next = h('div', {}, ...children);
-  if (next.innerHTML === listEl.innerHTML) return;
-  listEl.replaceChildren(...next.childNodes);
-}
-function requestRender() {
-  if (pressing || busy) { pendingRender = true; return; } // nicht während Tippen oder Öffnen einer VL
-  pendingRender = false;
-  renderList();
-}
 
 /** Kleiner Stern, der wie eine Fee herumhüpft und Sternenstaub verliert (eigener Takt je Eintrag). */
 let fairySeed = 0;
@@ -111,7 +94,7 @@ function renderList() {
           h('span', { class: 'muted' }, `${plural(groups.filter((g) => g.day != null).length, 'VL', 'VLs')} · ${plural(all.length, 'Frage', 'Fragen')}`))));
     })));
   }
-  showList(children);
+  listView.show(children);
 }
 
 /* ---------- Stapel: VLs und Todos ---------- */
@@ -155,7 +138,7 @@ function renderDeck(deck, notes) {
         h('div', { class: 'deck-title' }, dayLabel(g.day)),
         h('div', { class: 'deck-sub' }, plural(g.notes.length, 'Frage', 'Fragen'))),
       h('div', { class: 'deck-counts' }, todoBadge(countTodos(g.notes)), stateBar(deck, g.notes)))))));
-  showList(children);
+  listView.show(children);
 }
 
 /* ---------- VL-Editor ---------- */
@@ -208,7 +191,7 @@ async function openVL(deck, day, focus, btn) {
   } finally {
     busy = false;
     btn?.classList.remove('loading');
-    if (pendingRender) setTimeout(requestRender);
+    setTimeout(() => listView.flush());
   }
   const tags = baseTags(originals.map((o) => o.text), deck.tag, day);
   const base = buildDoc(originals, tags);
@@ -517,6 +500,7 @@ export default {
     core = ui.core;
     listEl = h('div', { class: 'study-list' });
     editEl = h('div', { class: 'study-edit', hidden: true });
+    listView = stableView(listEl, { hold: () => busy }); // nicht neu zeichnen, während eine VL geöffnet wird
     root.append(listEl, editEl);
 
     // Zurück-Geste: Editor → Stapel → Übersicht
@@ -543,16 +527,8 @@ export default {
     core.on('change', () => {
       if (root.hidden || ed || queued) return;
       queued = true;
-      requestAnimationFrame(() => { queued = false; requestRender(); });
+      requestAnimationFrame(() => { queued = false; listView.request(renderList); });
     });
-    listEl.addEventListener('pointerdown', () => { pressing = true; });
-    const release = () => {
-      if (!pressing) return;
-      pressing = false;
-      if (pendingRender) setTimeout(requestRender, 400); // erst nach dem click-Event neu zeichnen
-    };
-    document.addEventListener('pointerup', release);
-    document.addEventListener('pointercancel', release);
   },
 
   show() {
