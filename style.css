@@ -607,3 +607,10 @@ img.img-big { max-width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   .fairy-star, .fairy-dust { animation: none; }
 }
+
+/* VL wird geöffnet (Dateien werden eingelesen) */
+.deck.loading, .todo-item.loading, .btn.loading { opacity: .55; cursor: progress; }
+.deck.loading .deck-title::after {
+  content: ""; display: inline-block; width: 10px; height: 10px; margin-left: 8px; vertical-align: -1px;
+  border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: cm-spin .8s linear infinite;
+}

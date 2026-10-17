@@ -38,9 +38,29 @@ function todoBadge(n) {
 
 const STATE_LABEL = { open: 'offen', ready: 'bereit', skip: 'nicht abfragen' };
 
+/**
+ * Ersetzt die Liste nur, wenn sich ihr Inhalt geändert hat, und nie, während ein Finger/die Maus auf ihr liegt:
+ * sonst verpufft ein Tipp, wenn der Hintergrund-Abgleich die Liste zwischen Drücken und Loslassen neu zeichnet.
+ */
+let pressing = false;
+let pendingRender = false;
+function showList(children) {
+  const next = h('div', {}, ...children);
+  if (next.innerHTML === listEl.innerHTML) return;
+  listEl.replaceChildren(...next.childNodes);
+}
+function requestRender() {
+  if (pressing || busy) { pendingRender = true; return; } // nicht während Tippen oder Öffnen einer VL
+  pendingRender = false;
+  renderList();
+}
+
 /** Kleiner Stern, der wie eine Fee herumhüpft und Sternenstaub verliert (eigener Takt je Eintrag). */
+let fairySeed = 0;
 function fairy() {
-  const delay = (max) => `${-(Math.random() * max).toFixed(2)}s`;
+  // fester Takt pro Position (nicht zufällig), damit ein Neuzeichnen ohne Änderung die Liste nicht austauscht
+  const n = ++fairySeed;
+  const delay = (max) => `${-(((n * 0.618034 * max) % max)).toFixed(2)}s`;
   const dust = [[-7, 5], [6, 7], [-2, 9]].map(([dx, dy]) =>
     h('span', { class: 'fairy-dust', style: `--dx: ${dx}px; --dy: ${dy}px; animation-delay: ${delay(2.5)}` }));
   return h('span', { class: 'fairy', 'aria-label': 'alles bearbeitet' },
@@ -65,6 +85,7 @@ function stateBar(deck, notes) {
 
 function renderList() {
   if (ed) return;
+  fairySeed = 0;
   const ds = decks();
   const notes = core.list();
   if (deckIndex != null && !ds[deckIndex]) deckIndex = null;
@@ -90,7 +111,7 @@ function renderList() {
           h('span', { class: 'muted' }, `${plural(groups.filter((g) => g.day != null).length, 'VL', 'VLs')} · ${plural(all.length, 'Frage', 'Fragen')}`))));
     })));
   }
-  listEl.replaceChildren(...children);
+  showList(children);
 }
 
 /* ---------- Stapel: VLs und Todos ---------- */
@@ -110,7 +131,7 @@ function renderDeck(deck, notes) {
     h('header', { class: 'bar' },
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zurück', onclick: leave }, '←'),
       h('h1', { class: 'ellipsis' }, deck.name)),
-    h('button', { type: 'button', class: 'btn', onclick: () => openVL(deck, day) },
+    h('button', { type: 'button', class: 'btn', onclick: (e) => openVL(deck, day, null, e.currentTarget) },
       hasToday ? `Heutige VL öffnen (${dayToGerman(day)})` : `+ Neue VL heute (${dayToGerman(day)})`),
   ];
 
@@ -121,7 +142,7 @@ function renderDeck(deck, notes) {
   if (open.length) {
     children.push(h('h2', { class: 'section' }, `Offene Todos (${open.length})`),
       h('ul', { class: 'todo-list' }, ...open.map(({ g, n, t }) => h('li', {},
-        h('button', { type: 'button', class: 'todo-item', onclick: () => openVL(deck, g.day, { title: n.title, todo: t }) },
+        h('button', { type: 'button', class: 'todo-item', onclick: (e) => openVL(deck, g.day, { title: n.title, todo: t }, e.currentTarget) },
           h('span', { class: 'todo-text' }, t || '(ohne Text)'),
           h('span', { class: 'todo-where' }, `${dayLabel(g.day)} · ${n.title}?`))))));
   }
@@ -129,12 +150,12 @@ function renderDeck(deck, notes) {
   children.push(h('h2', { class: 'section' }, 'Vorlesungen'));
   if (!groups.length) children.push(h('p', { class: 'hint left' }, `Noch keine Notizen mit #${deck.tag}.`));
   children.push(h('ul', { class: 'decks' }, ...groups.map((g) => h('li', {},
-    h('button', { type: 'button', class: 'deck' + (allSet(g.notes) ? ' all-set' : ''), onclick: () => openVL(deck, g.day) },
+    h('button', { type: 'button', class: 'deck' + (allSet(g.notes) ? ' all-set' : ''), onclick: (e) => openVL(deck, g.day, null, e.currentTarget) },
       h('div', { class: 'deck-main' },
         h('div', { class: 'deck-title' }, dayLabel(g.day)),
         h('div', { class: 'deck-sub' }, plural(g.notes.length, 'Frage', 'Fragen'))),
       h('div', { class: 'deck-counts' }, todoBadge(countTodos(g.notes)), stateBar(deck, g.notes)))))));
-  listEl.replaceChildren(...children);
+  showList(children);
 }
 
 /* ---------- VL-Editor ---------- */
@@ -174,9 +195,10 @@ function folderFor(deck, originals) {
 }
 
 /** Öffnet den Editor einer VL; `focus` = { title, todo } springt zu einem Todo. */
-async function openVL(deck, day, focus) {
+async function openVL(deck, day, focus, btn) {
   if (busy) return;
   busy = true;
+  btn?.classList.add('loading'); // sofort sichtbar: das Einlesen dauert auf dem Handy etwas
   let originals;
   try {
     originals = await loadOriginals(deck, day);
@@ -185,6 +207,8 @@ async function openVL(deck, day, focus) {
     return;
   } finally {
     busy = false;
+    btn?.classList.remove('loading');
+    if (pendingRender) setTimeout(requestRender);
   }
   const tags = baseTags(originals.map((o) => o.text), deck.tag, day);
   const base = buildDoc(originals, tags);
@@ -519,8 +543,16 @@ export default {
     core.on('change', () => {
       if (root.hidden || ed || queued) return;
       queued = true;
-      requestAnimationFrame(() => { queued = false; renderList(); });
+      requestAnimationFrame(() => { queued = false; requestRender(); });
     });
+    listEl.addEventListener('pointerdown', () => { pressing = true; });
+    const release = () => {
+      if (!pressing) return;
+      pressing = false;
+      if (pendingRender) setTimeout(requestRender, 400); // erst nach dem click-Event neu zeichnen
+    };
+    document.addEventListener('pointerup', release);
+    document.addEventListener('pointercancel', release);
   },
 
   show() {
