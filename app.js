@@ -1,9 +1,9 @@
 // App-Rahmen: Startseite, Tabs für Feature-Module, gemeinsamer Notiz-Editor.
 import { core } from './core.js';
 import search from './features/search.js';
-import tagging from './features/tagging.js';
 import study from './features/study.js';
 import review from './features/review.js';
+import diary from './features/diary.js';
 import syncTab from './features/sync.js';
 import { applyTheme } from './features/theme.js';
 import { createEditor } from './features/editor.js';
@@ -12,8 +12,9 @@ import { aiCorrect } from './features/aicorrect.js';
 import { createPrompts } from './features/prompts.js';
 import { createTagIndex } from './features/tags.js';
 
-// Neue Feature-Module hier eintragen: { id, title, mount(root, ui), show?() }
-const FEATURES = [search, tagging, study, review, syncTab];
+// Neue Feature-Module hier eintragen: { id, title, mount(root, ui), show?(), hide?() }
+// Diary fasst Taggen und Streams zusammen (eigener Umschalter, siehe features/diary.js).
+const FEATURES = [search, study, review, diary, syncTab];
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -194,7 +195,9 @@ function buildTabs() {
 }
 
 function selectTab(id) {
+  if (id === 'tagging') id = 'diary'; // früherer eigener Tab
   const f = FEATURES.find((x) => x.id === id) || FEATURES[0];
+  if (activeTab && activeTab !== f.id) FEATURES.find((x) => x.id === activeTab)?.hide?.();
   activeTab = f.id;
   for (const [pid, panel] of panels) panel.hidden = pid !== f.id;
   for (const b of el.tabs.children) b.classList.toggle('active', b.dataset.id === f.id);

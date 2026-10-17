@@ -13,7 +13,7 @@ Minimale PWA, um auf dem Android-Handy einen lokalen Obsidian-Vault schnell zu d
 ## Benutzung
 
 - **Vault öffnen** tippen und im Ordner-Dialog **nur den Vault-Ordner** auswählen (den Ordner, der `.obsidian/` enthält) – nicht „Interner Speicher“, „Documents“ o. Ä. Die App bekommt Lese- *und Schreib*zugriff auf genau diesen Ordner samt Unterordnern; gib ihr nicht mehr als nötig.
-Unten wechselst du zwischen den Modulen **Suche**, **Taggen**, **Study**, **Review** und **Settings**.
+Unten wechselst du zwischen den Modulen **Suche**, **Study**, **Review**, **Diary** (darin **Taggen** und **Streams**) und **Settings**.
 
 ### Suche
 
@@ -21,7 +21,7 @@ Unten wechselst du zwischen den Modulen **Suche**, **Taggen**, **Study**, **Revi
 - Treffer antippen → Notiz bearbeiten → **Speichern** schreibt die Datei direkt zurück. Die Android-Zurück-Geste führt zurück zur Suche (mit Warnung bei ungespeicherten Änderungen).
 - `.obsidian/`, `.trash/` und `.git/` werden ignoriert.
 
-### Taggen
+### Diary → Taggen
 
 - Zeigt TILs mit dem Filter-Tag (voreingestellt `#life/diary`, inkl. Untertags), neueste zuerst nach `#date/JJJJ/MM/TT` (ohne Datums-Tag: Änderungsdatum der Datei).
 - „nur ohne #diary/…“ (standardmäßig an) blendet TILs aus, die schon einen `#diary/…`-Tag haben.
@@ -29,6 +29,23 @@ Unten wechselst du zwischen den Modulen **Suche**, **Taggen**, **Study**, **Revi
 - TIL links antippen klappt den ganzen Inhalt auf.
 - Geschrieben wird erst über **Prüfen & bestätigen**: Die Tags werden an die Tag-Zeile in Zeile 1 (bzw. der ersten Zeile nach einer Frontmatter) angehängt (gibt es keine, wird dort eine neue Zeile eingefügt). Es wird nur hinzugefügt, nie entfernt. Wurde eine Datei inzwischen geändert, werden die Tags auf den aktuellen Stand gesetzt und die Datei wird gemeldet.
 - Offene Zuweisungen bleiben gespeichert, auch wenn die App geschlossen wird.
+
+### Diary → Streams
+
+Ein Stream zeigt einen Tag über die Zeit, z. B. `#diary/mental` (Untertags zählen mit). Die Streams stehen in `Streams.md` im obersten Ordner des Vaults, aufgebaut wie `Review.md`, mit optionalen Kapiteln:
+
+```markdown
+## Mental
+- tag: #diary/mental
+- kapitel: 2026-01-12 bis 2026-02-20 Prüfungsphase
+- kapitel: 2026-10-06 bis heute Wintersemester
+```
+
+- **Übersicht:** alle Streams mit Anzahl, letztem Eintrag und einer Kurve „Einträge pro Woche“ (12 Monate). **+ Neuer Stream** schlägt die 10 häufigsten `#diary/…`-Tags vor und trägt den Stream in `Streams.md` ein (die Datei wird bei Bedarf angelegt).
+- **Zeitleiste:** oben ein Streifen mit einem Kästchen pro Woche (26 Wochen; antippen springt hin), darunter die Einträge nach Monaten (ältere werden beim Scrollen nachgeladen). Titel antippen klappt den Eintrag auf, **Bearbeiten** öffnet ihn im Editor. Kapitel erscheinen als violettes Band; **+ Kapitel** → ersten und letzten Eintrag antippen (oder „bis heute“) → Name.
+- **Heute sehe ich das so …** (✍️ an jedem Eintrag): hängt wie im Review `::TT.MM.JJJJ::` + Antwort an die Notiz. Unter dem Eintrag steht die neueste Antwort, aufgeklappt alle.
+- **Damals:** Einträge von vor 1 Monat, 3 Monaten und 1 Jahr (±7 Tage), ein zufälliger Eintrag mit „Was würdest du heute dazu sagen?“ und **Damals ↔ Heute**: Zu einem Stichwort (Vorschläge = Wörter, die früh und spät im Stream oft vorkommen, oder selbst eintippen) steht der früheste Eintrag neben einem späteren; ‹ › blättert durch alle dazwischen.
+- **Muster:** auffällige Wörter pro Kapitel bzw. Quartal – Wörter, die dort deutlich häufiger vorkommen als im Rest des Stream. Füllwörter (die 400 häufigsten Wörter der deutschen und englischen Wortliste), Wörter unter 4 Buchstaben, Tags und Links zählen nicht. Ein Wort antippen zeigt es als Faden unter Damals.
 
 ### Study
 
