@@ -6,6 +6,7 @@ import {
   StateField, StateEffect, showTooltip, EditorSelection,
   history, defaultKeymap, historyKeymap, indentMore, indentLess,
   Language, defineLanguageFacet, LanguageSupport, syntaxTree, markdownParser, GFM,
+  autocompletion, acceptCompletion,
 } from '../vendor/codemirror.js';
 import { parseSize, splitAlt, sizeImage } from './image.js';
 import { sentenceAround } from './aicorrect.js';
@@ -617,6 +618,40 @@ function selectionPrompt(prompt) {
   ];
 }
 
+/* ---------- Tag-Vorschläge ---------- */
+
+/**
+ * Beim Tippen von `#` + mindestens einem Zeichen: passende Tags aus dem Vault (`tags.suggest`, siehe tags.js).
+ * ↑/↓ wählen, Enter oder Tab übernehmen (mit Leerzeichen dahinter), Escape schließt; auf dem Handy antippen.
+ */
+function tagComplete(tags) {
+  const source = (ctx) => {
+    const m = ctx.matchBefore(/#[\p{L}\p{N}_\-/]+/u);
+    if (!m) return null;
+    const before = ctx.state.sliceDoc(m.from - 1, m.from);
+    if (before && !/[\s(,]/.test(before)) return null; // z. B. URL-Anker oder Überschrift „##x“
+    for (let n = syntaxTree(ctx.state).resolveInner(m.from, 1); n; n = n.parent) if (SKIP_NODES.has(n.name)) return null;
+    const list = tags.suggest(m.text.slice(1));
+    if (!list.length) return null;
+    return {
+      from: m.from,
+      filter: false,
+      options: list.map((t) => ({
+        label: '#' + t,
+        apply: (view, _c, from, to) => {
+          const space = view.state.sliceDoc(to, to + 1) === ' ' ? '' : ' ';
+          const insert = '#' + t + space;
+          view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length + (space ? 0 : 1) }, userEvent: 'input.complete' });
+        },
+      })),
+    };
+  };
+  return [
+    autocompletion({ override: [source], icons: false, maxRenderedOptions: 6, closeOnBlur: true }),
+    Prec.highest(keymap.of([{ key: 'Tab', run: acceptCompletion }])),
+  ];
+}
+
 /* ---------- Bilder einfügen (Zwischenablage, Ziehen) ---------- */
 
 function imagePaste(saveImage) {
@@ -723,7 +758,7 @@ function continueList(view) {
 /**
  * opts: { parent, doc, onChange(text), placeholder, decorate(text), openLink(target), resolveImage(link) → Promise<URL>,
  *         spell (siehe spell.js, nur am Desktop übergeben), ai (siehe aicorrect.js, nur am Desktop),
- *         prompt (siehe prompts.js, nur am Desktop),
+ *         prompt (siehe prompts.js, nur am Desktop), tags (siehe tags.js: Tag-Vorschläge),
  *         saveImage(file) → Promise<Markdown-Link> }
  * Gibt { view, value, set(text), focus(), jumpToLine(i), refresh(), destroy() } zurück.
  */
@@ -757,6 +792,7 @@ export function createEditor(opts) {
     opts.spell ? spellSuggest(opts.spell) : [],
     opts.spell || opts.ai ? wordMenu({ spell: opts.spell, ai: opts.ai }) : [],
     opts.prompt ? selectionPrompt(opts.prompt) : [],
+    opts.tags ? tagComplete(opts.tags) : [],
     opts.saveImage ? imagePaste(opts.saveImage) : [],
     EditorView.updateListener.of((u) => { if (u.docChanged) opts.onChange?.(u.state.doc.toString()); }),
   ];

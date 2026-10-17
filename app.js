@@ -10,6 +10,7 @@ import { createEditor } from './features/editor.js';
 import { createSpell } from './features/spell.js';
 import { aiCorrect } from './features/aicorrect.js';
 import { createPrompts } from './features/prompts.js';
+import { createTagIndex } from './features/tags.js';
 
 // Neue Feature-Module hier eintragen: { id, title, mount(root, ui), show?() }
 const FEATURES = [search, tagging, study, review, syncTab];
@@ -137,7 +138,10 @@ if (spell) core.on('change', () => spell.invalidate());
 const ai = desktop ? aiCorrect : null; // KI-Vorschläge per Doppelklick, ebenfalls nur am Computer
 const prompts = desktop ? createPrompts({ notes: () => core.list() }) : null; // Prompt auf markierten Text
 
-const ui = { core, toast, openNote, openLink, resolveImage, saveImage, spell, ai, prompts, pickVault };
+const tags = createTagIndex({ notes: () => core.list() }); // Tag-Vorschläge im Editor (auch auf dem Handy)
+core.on('change', () => tags.invalidate());
+
+const ui = { core, toast, openNote, openLink, resolveImage, saveImage, spell, ai, prompts, tags, pickVault };
 
 /* ---------- Editor ---------- */
 
@@ -239,6 +243,7 @@ async function init() {
     spell,
     ai,
     prompt: prompts,
+    tags,
   });
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's' && current) { e.preventDefault(); save(); }

@@ -2,6 +2,7 @@
   "private": true,
   "description": "Nur zum Bauen von vendor/codemirror.js (./build.sh). Die App selbst braucht kein npm.",
   "dependencies": {
+    "@codemirror/autocomplete": "6.20.3",
     "@codemirror/commands": "6.11.1",
     "@codemirror/language": "6.13.1",
     "@codemirror/state": "6.7.6",

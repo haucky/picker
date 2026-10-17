@@ -7,3 +7,4 @@ export { history, defaultKeymap, historyKeymap, indentWithTab, indentMore, inden
 export { Language, defineLanguageFacet, LanguageSupport, syntaxTree, syntaxHighlighting, HighlightStyle } from '@codemirror/language';
 export { parser as markdownParser, GFM } from '@lezer/markdown';
 export { tags } from '@lezer/highlight';
+export { autocompletion, startCompletion, completionStatus, acceptCompletion } from '@codemirror/autocomplete';

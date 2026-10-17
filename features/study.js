@@ -251,6 +251,7 @@ function renderEditor(text) {
     spell: ui.spell,
     ai: ui.ai,
     prompt: ui.prompts,
+    tags: ui.tags,
     // Bilder relativ zum Ordner der TILs dieser VL auflösen
     resolveImage: (link) => ui.resolveImage(link, ed.folder ? ed.folder + '/_.md' : '_.md'),
   });
