@@ -157,19 +157,14 @@ function dropDraft(key) {
   try { localStorage.removeItem(key); } catch { /* egal */ }
 }
 
-/** Liest die TILs der VL frisch ein (Stand für den Abgleich beim Speichern). */
-async function loadOriginals(deck, day) {
+/**
+ * Stand der TILs der VL für den Abgleich beim Speichern – aus dem Zwischenspeicher (den der Abgleich aktuell hält),
+ * ohne jede Datei neu zu lesen; das dauerte auf dem Handy pro Datei spürbar. Ob eine Datei seitdem außerhalb
+ * geändert wurde, prüft save() vor dem Überschreiben direkt auf der Platte.
+ */
+function loadOriginals(deck, day) {
   const group = groupByDay(core.list(), deck).find((g) => g.day === day);
-  const notes = group ? group.notes : [];
-  const originals = [];
-  for (const n of notes) {
-    try {
-      originals.push({ path: n.path, title: n.title, text: await core.read(n.path) });
-    } catch (err) {
-      if (err.name !== 'NotFoundError') throw err;
-    }
-  }
-  return originals;
+  return (group ? group.notes : []).map((n) => ({ path: n.path, title: n.title, text: n.text }));
 }
 
 function folderFor(deck, originals) {
@@ -425,15 +420,14 @@ async function save() {
   try {
     // Wurde etwas außerhalb geändert (Obsidian Sync, anderer Tab)?
     const touched = [...updates, ...deletes].map((c) => ed.originals.find((o) => o.path === c.path));
-    const changed = [];
-    for (const o of touched) {
+    const changed = (await Promise.all(touched.map(async (o) => {
       try {
-        if ((await core.read(o.path)) !== o.text) changed.push(o.title);
+        return (await core.read(o.path)) !== o.text ? o.title : null;
       } catch (err) {
         if (err.name !== 'NotFoundError') throw err;
-        changed.push(o.title + ' (gelöscht)');
+        return o.title + ' (gelöscht)';
       }
-    }
+    }))).filter(Boolean);
     if (changed.length && !confirm('Seit dem Öffnen außerhalb geändert:\n\n' + changed.map((t) => `• ${t}`).join('\n') +
       '\n\nTrotzdem mit deinem Stand überschreiben?')) return;
 
