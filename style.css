@@ -622,3 +622,26 @@ img.img-big { max-width: 100%; }
 .md-editor .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li { padding: 6px 12px; color: var(--cyan); border-radius: 6px; }
 .md-editor .cm-editor .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] { background: var(--bg); color: var(--accent); }
 .md-editor .cm-editor .cm-tooltip-autocomplete .cm-completionMatchedText { text-decoration: none; font-weight: 600; }
+
+/* Kontextmenü am Punkt einer Frage (Study): KI-Aktionen, Umbenennen */
+.md-editor .cm-dot { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.qmenu {
+  position: fixed; z-index: 14; width: min(300px, calc(100vw - 16px)); padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .3); font-size: .95rem;
+}
+.qmenu-item {
+  border: 0; background: transparent; color: var(--text); text-align: left;
+  padding: 9px 10px; border-radius: 6px; min-height: 40px;
+}
+.qmenu-item:hover, .qmenu-item:active { background: var(--bg); }
+.qmenu-item.accent { color: var(--accent); font-weight: 600; }
+.qmenu-input {
+  width: 100%; padding: 8px 10px; margin-bottom: 4px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--text); font: inherit; outline: none;
+}
+.qmenu-input:focus { border-color: var(--accent); }
+.qmenu-sep { border-top: 1px solid var(--line); margin: 4px 4px; }
+.qmenu-note, .qmenu-label { color: var(--muted); font-size: .85rem; padding: 6px 10px; }
+.qmenu-row { display: flex; justify-content: flex-end; gap: 4px; }

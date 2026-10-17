@@ -57,6 +57,12 @@ Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.m
 
 **Review-Status:** Jede Frage ist *offen* (unbearbeitet, Standard), *bereit* (wird im Review abgefragt) oder *nicht abfragen* (z. B. „Welche Modalitäten hat die Klausur?“). Den Punkt vor der Frage antippen schaltet weiter: offen (leerer Kreis) → bereit (grün, Zeile leicht grün) → nicht abfragen (grau, Zeile leicht grau) → offen. Neben dem Titel steht, wie viele Fragen der VL noch offen sind. Gespeichert wird der Status mit **Speichern** (bis dahin im Entwurf) in der Frontmatter der Notiz: `review-state: ready` bzw. `review-state: skip`, bei offen gibt es kein Feld. Notizen ohne Feld, die schon einen SR-Stand haben (also schon wiederholt wurden), gelten als bereit; wird so eine Notiz auf offen gestellt, steht dort `review-state: open`.
 
+**Menü an der Frage:** Den Punkt vor einer Frage lang drücken (am Computer: Rechtsklick) öffnet ein Menü:
+- **KI-Aktionen:** die obersten 3 Abkürzungen aus `Prompts.md` direkt als Knöpfe, darüber ein Feld für einen eigenen Prompt oder eine andere Abkürzung (auch auf dem Handy). Geschickt wird die ganze Frage samt Inhalt und eigenen Antworten (ohne Todos und Tags); **Einfügen** setzt die Antwort ans Ende dieser Frage.
+- **Umbenennen:** ändert die Frage, ohne dass der Lernstand verloren geht – beim Speichern zieht die Notiz mit Frontmatter (SR-Stand, Status) und Tags unter den neuen Namen um (Links in Obsidian auf den alten Namen werden dabei nicht angepasst).
+
+Fragen mit Status *bereit* sind gegen versehentliches Ändern gesperrt (der Text bis zum „?“); Inhalt und Tags dahinter bleiben frei. Ändern geht über **Umbenennen** – oder den Status vorher auf offen stellen.
+
 - **Speichern** gleicht über den Dateinamen ab (Dateiname = Frage ohne `?`):
   - gleiche Frage → nur der Inhalt wird ersetzt; Frontmatter (SR-Stand) und Tag-Zeile bleiben,
   - neue Frage → neue Notiz im Ordner der anderen TILs der VL (bei neuer VL: Ordner der neuesten Notiz im Stapel) mit den Grund-Tags der VL plus den Tags hinter der Frage,

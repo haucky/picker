@@ -248,35 +248,50 @@ export function newNoteText(tags, body, order, state = 'open') {
 /**
  * Plant das Speichern. `originals`: [{ path, title, text }] = Stand der VL beim Öffnen.
  * ctx: { folder, base (Grund-Tags), exists(path) → bool (Groß-/Kleinschreibung egal),
- *        states: Map Frage-Titel → Review-Status (optional; fehlende Titel bleiben wie sie sind bzw. open) }.
- * Gibt { errors, updates, creates, deletes } zurück; jede Änderung als { path, title, text? }.
+ *        states: Map Frage-Titel → Review-Status (optional; fehlende Titel bleiben wie sie sind bzw. open),
+ *        renames: Map neuer Titel → alter Titel (optional; über „Umbenennen“: die Notiz zieht mit Frontmatter
+ *        und Tags um, statt neu angelegt zu werden – der SR-Stand bleibt) }.
+ * Gibt { errors, updates, creates, moves, deletes } zurück; jede Änderung als { path, title, text? },
+ * moves zusätzlich mit `from` (alter Pfad) und `oldTitle`.
  */
 export function planSave(doc, originals, ctx) {
   const { items, errors } = parseDoc(doc);
   const updates = [];
   const creates = [];
+  const moves = [];
   const byTitle = new Map(originals.map((o) => [o.title, o]));
+  const titles = new Set(items.map((it) => it.title));
   const used = new Set();
   const baseLower = new Set(ctx.base.map((t) => t.toLowerCase()));
   items.forEach((it, i) => {
     const seen = new Set(baseLower);
     it = { ...it, tags: it.tags.filter((t) => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase())) };
-    const o = byTitle.get(it.title);
-    if (o) {
+    const state = ctx.states?.get(it.title);
+    let o = byTitle.get(it.title);
+    if (!o && ctx.renames?.has(it.title)) {
+      const old = byTitle.get(ctx.renames.get(it.title));
+      if (old && !titles.has(old.title) && !used.has(old.path)) o = old;
+    }
+    if (o && o.title !== it.title) {
       used.add(o.path);
-      const text = applyItem(o.text, it, i + 1, ctx.base, ctx.states?.get(it.title));
+      const dir = o.path.includes('/') ? o.path.slice(0, o.path.lastIndexOf('/') + 1) : '';
+      moves.push({ from: o.path, path: dir + it.title + '.md', title: it.title, oldTitle: o.title, line: it.line,
+        text: applyItem(o.text, it, i + 1, ctx.base, state) });
+    } else if (o) {
+      used.add(o.path);
+      const text = applyItem(o.text, it, i + 1, ctx.base, state);
       if (text !== o.text) updates.push({ path: o.path, title: o.title, text });
     } else {
       const path = (ctx.folder ? ctx.folder + '/' : '') + it.title + '.md';
-      creates.push({ path, title: it.title, line: it.line, text: newNoteText([...ctx.base, ...it.tags], it.body, i + 1, ctx.states?.get(it.title)) });
+      creates.push({ path, title: it.title, line: it.line, text: newNoteText([...ctx.base, ...it.tags], it.body, i + 1, state) });
     }
   });
   const deletes = originals.filter((o) => !used.has(o.path)).map((o) => ({ path: o.path, title: o.title }));
-  const freed = new Set(deletes.map((d) => d.path.toLowerCase()));
-  for (const c of creates) {
+  const freed = new Set([...deletes, ...moves.map((m) => ({ path: m.from }))].map((d) => d.path.toLowerCase()));
+  for (const c of [...creates, ...moves]) {
     if (ctx.exists(c.path) && !freed.has(c.path.toLowerCase())) {
       errors.push({ line: c.line, msg: `„${c.path}“ gibt es schon im Vault (in einer anderen VL oder einem anderen Stapel)` });
     }
   }
-  return { errors, updates, creates, deletes };
+  return { errors, updates, creates, moves, deletes };
 }

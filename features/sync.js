@@ -168,7 +168,8 @@ export default {
       h('h2', { class: 'section' }, 'KI'),
       aiRow(),
       h('p', { class: 'hint left' },
-        'Für alle KI-Funktionen (nur am Computer). Läuft über Tinfoil: verschlüsselt, die Enclave wird vor jeder Sitzung ' +
+        'Für alle KI-Funktionen: Korrektur und Prompts auf markierten Text am Computer, KI-Aktionen an einer Frage ' +
+        '(Punkt lang drücken bzw. Rechtsklick) auch am Handy. Läuft über Tinfoil: verschlüsselt, die Enclave wird vor jeder Sitzung ' +
         'geprüft. Der Key bleibt in diesem Browser. Key unter tinfoil.sh anlegen.'),
       modelRow('correct', 'Modell Korrektur'),
       modelRow('prompt', 'Modell Prompts'),

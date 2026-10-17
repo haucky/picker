@@ -2,7 +2,7 @@
 // Fließtext-Dokument („Frage?“-Zeile + Inhalt). Speichern ändert, legt an und verschiebt in den Papierkorb.
 import { h, stableView } from './dom.js';
 import { createEditor } from './editor.js';
-import { printVL, exportName } from './export.js';
+import { printVL, exportName, withoutTodos } from './export.js';
 import { CONFIG_PATH, parseDecks, isConfig, today, dayToGerman, reviewState, nextReviewState, countStates } from './srs.js';
 import {
   todos, todoStart, todoText, groupByDay, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
@@ -150,7 +150,7 @@ function loadDraft(key) {
 function storeDraft() {
   try {
     if (!isDirty()) localStorage.removeItem(ed.draftKey);
-    else localStorage.setItem(ed.draftKey, JSON.stringify({ text: ed.cm.value, base: ed.base, states: Object.fromEntries(ed.states) }));
+    else localStorage.setItem(ed.draftKey, JSON.stringify({ text: ed.cm.value, base: ed.base, states: Object.fromEntries(ed.states), renames: Object.fromEntries(ed.renames) }));
   } catch { /* egal */ }
 }
 function dropDraft(key) {
@@ -198,6 +198,7 @@ async function openVL(deck, day, focus, btn) {
     deck, day, originals, base, draftKey: key,
     states: restore && draft.states ? new Map([...states, ...Object.entries(draft.states)]) : new Map(states),
     statesBase: states,
+    renames: new Map(restore && draft.renames ? Object.entries(draft.renames) : []), // neuer Titel → alter Titel
     folder: folderFor(deck, originals),
     tags,
     issues: roundtripIssues(originals, tags),
@@ -250,8 +251,10 @@ function renderEditor(text) {
     saveImage: ui.saveImage,
     spell: ui.spell,
     ai: ui.ai,
-    prompt: ui.prompts,
+    prompt: ui.desktop ? ui.prompts : null, // Eingabefeld beim Markieren nur am Computer
     tags: ui.tags,
+    locked: lockedQuestions,
+    onLocked: () => lockedHint(),
     // Bilder relativ zum Ordner der TILs dieser VL auflösen
     resolveImage: (link) => ui.resolveImage(link, ed.folder ? ed.folder + '/_.md' : '_.md'),
   });
@@ -320,7 +323,8 @@ function studyMarks(text) {
       out.push({ line: i, from: 0, to: q.tagsAt, class: 'cm-q' });
       if (ed) {
         const st = stateOf(q.title);
-        out.push({ line: i, dot: { class: st, title: `Review: ${STATE_LABEL[st]} (antippen zum Ändern)`, onClick: cycleState } });
+        out.push({ line: i, dot: { class: st, title: `Review: ${STATE_LABEL[st]} – antippen zum Ändern, lang drücken bzw. Rechtsklick für mehr`,
+          onClick: cycleState, onMenu: openQuestionMenu } });
         if (st !== 'open') out.push({ line: i, class: 'cm-q-' + st });
       }
       return;
@@ -348,6 +352,7 @@ function jumpTo({ title, todo }) {
 const isDirty = () => !!ed && !!ed.cm && (ed.cm.value !== ed.base || statesDiffer(ed.states, ed.statesBase));
 
 function closeEditor({ discard = false } = {}) {
+  closeQuestionMenu();
   if (discard) dropDraft(ed.draftKey);
   ed.cm?.destroy();
   ed = null;
@@ -367,6 +372,144 @@ function leave() {
     deckIndex = null;
     renderList();
   }
+}
+
+/* ---------- Fragen: Sperre, Kontextmenü (KI-Aktionen, Umbenennen) ---------- */
+
+/** Frage-Zeilen außerhalb von Codeblöcken: [{ line, title, tagsAt }]. */
+function questionLines(lines) {
+  const out = [];
+  let fence = null;
+  lines.forEach((line, i) => {
+    const f = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; return; }
+    if (f) { fence = f[1]; return; }
+    const q = parseQuestion(line);
+    if (q) out.push({ line: i, title: q.title, tagsAt: q.tagsAt });
+  });
+  return out;
+}
+
+/** Fragen mit Status „bereit“ sind gesperrt (Text bis einschließlich „?“); ändern nur über „Umbenennen“. */
+function lockedQuestions(text) {
+  if (!ed) return [];
+  const lines = text.split('\n');
+  const starts = [];
+  let pos = 0;
+  for (const l of lines) { starts.push(pos); pos += l.length + 1; }
+  return questionLines(lines).filter((q) => stateOf(q.title) === 'ready')
+    .map((q) => ({ from: starts[q.line], to: starts[q.line] + q.tagsAt }));
+}
+
+let lockedHintAt = 0;
+function lockedHint() {
+  if (Date.now() - lockedHintAt < 3000) return;
+  lockedHintAt = Date.now();
+  ui.toast('Frage ist „bereit“ – ändern über den Punkt: lang drücken bzw. Rechtsklick → Umbenennen', 4000);
+}
+
+/** Frage `title` im aktuellen Text: { line, title, text (Frage + Inhalt ohne Todos), end (Position nach dem Inhalt) }. */
+function questionBlock(title) {
+  const lines = ed.cm.value.split('\n');
+  const qs = questionLines(lines);
+  const k = qs.findIndex((q) => q.title === title);
+  if (k < 0) return null;
+  const start = qs[k].line;
+  let last = (k + 1 < qs.length ? qs[k + 1].line : lines.length) - 1;
+  while (last > start && !lines[last].trim()) last--;
+  const end = lines.slice(0, last + 1).reduce((n, l) => n + l.length + 1, 0) - 1;
+  const body = withoutTodos(lines.slice(start + 1, last + 1).join('\n')).trim();
+  return { line: start, title, text: title + '?' + (body ? '\n' + body : ''), end };
+}
+
+let menuEl = null;
+function closeQuestionMenu() {
+  if (!menuEl) return;
+  menuEl.remove();
+  document.removeEventListener('pointerdown', menuEl._outside, true);
+  document.removeEventListener('keydown', menuEl._key, true);
+  menuEl = null;
+}
+
+/** Kontextmenü am Punkt einer Frage: oberste 3 Prompts aus Prompts.md, eigener Prompt, Umbenennen. */
+function openQuestionMenu(line, rect) {
+  if (!ed) return;
+  closeQuestionMenu();
+  const q = parseQuestion(ed.cm.value.split('\n')[line] || '');
+  if (!q) return;
+  const title = q.title;
+  const el = h('div', { class: 'qmenu', role: 'menu' });
+  const ai = ui.prompts && ui.prompts.available();
+  const runPrompt = (input) => {
+    if (!input.trim()) return;
+    const block = questionBlock(title);
+    if (!block) return;
+    closeQuestionMenu();
+    ui.prompts.run({
+      input, text: block.text,
+      // ans Ende der Frage (im dann aktuellen Text, falls sich inzwischen etwas verschoben hat)
+      insert: (out) => {
+        const b = questionBlock(title);
+        if (!b || !out) return;
+        ed.cm.view.dispatch({ changes: { from: b.end, insert: '\n' + out }, selection: { anchor: b.end + 1 + out.length }, scrollIntoView: true });
+      },
+      focusBack: () => {},
+    });
+  };
+  const item = (label, onclick, attrs = {}) => h('button', { type: 'button', class: 'qmenu-item', role: 'menuitem', onclick, ...attrs }, label);
+  const showMain = () => {
+    const parts = [];
+    if (ai) {
+      const input = h('input', { type: 'text', class: 'qmenu-input', placeholder: '✦ Eigener Prompt oder Abkürzung …',
+        enterkeyhint: 'send', onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); runPrompt(input.value); } } });
+      parts.push(input, ...ui.prompts.list().slice(0, 3).map((pr) => item('✦ ' + pr.name, () => runPrompt(pr.name), { title: pr.prompt })));
+    } else if (ui.prompts) {
+      parts.push(h('div', { class: 'qmenu-note' }, navigator.onLine ? 'KI: Tinfoil-Key unter Settings eintragen' : 'KI: offline'));
+    }
+    parts.push(h('div', { class: 'qmenu-sep' }), item('✎ Umbenennen', showRename));
+    el.replaceChildren(...parts);
+  };
+  const showRename = () => {
+    const input = h('input', { type: 'text', class: 'qmenu-input', value: title, 'aria-label': 'Neue Frage' });
+    const ok = () => { if (renameQuestion(title, input.value)) closeQuestionMenu(); };
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ok(); } });
+    el.replaceChildren(h('div', { class: 'qmenu-label' }, 'Frage umbenennen (Lernstand bleibt)'), input,
+      h('div', { class: 'qmenu-row' }, item('Abbrechen', closeQuestionMenu), item('Umbenennen', ok, { class: 'qmenu-item accent' })));
+    setTimeout(() => { input.focus(); input.select(); });
+  };
+  showMain();
+  document.body.append(el);
+  const w = el.offsetWidth;
+  el.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
+  el.style.top = Math.min(rect.bottom + 6, window.innerHeight - el.offsetHeight - 8) + 'px';
+  el._outside = (e) => { if (!el.contains(e.target)) closeQuestionMenu(); };
+  el._key = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeQuestionMenu(); } };
+  document.addEventListener('pointerdown', el._outside, true);
+  document.addEventListener('keydown', el._key, true);
+  menuEl = el;
+}
+
+/** Benennt eine Frage im Text um; beim Speichern zieht die Notiz mit Frontmatter (SR-Stand, Status) und Tags um. */
+function renameQuestion(oldTitle, value) {
+  const next = value.trim().replace(/\?+$/, '').trim();
+  if (!next || next === oldTitle) return true;
+  const q = parseQuestion(next + '?');
+  if (!q || q.title !== next) { ui.toast('Das ist keine gültige Frage (eine Zeile, „?“ nur am Ende)', 4000); return false; }
+  const lines = ed.cm.value.split('\n');
+  const qs = questionLines(lines);
+  if (qs.some((x) => x.title === next)) { ui.toast('Diese Frage gibt es in der VL schon', 4000); return false; }
+  const hit = qs.find((x) => x.title === oldTitle);
+  if (!hit) return true;
+  const from = lines.slice(0, hit.line).reduce((n, l) => n + l.length + 1, 0);
+  ed.cm.view.dispatch({ changes: { from, to: from + oldTitle.length, insert: next } }); // ohne userEvent: an der Sperre vorbei
+  const orig = ed.renames.get(oldTitle) ?? (ed.originals.some((o) => o.title === oldTitle) ? oldTitle : null);
+  ed.renames.delete(oldTitle);
+  if (orig && orig !== next) ed.renames.set(next, orig);
+  if (ed.states.has(oldTitle)) { ed.states.set(next, ed.states.get(oldTitle)); ed.states.delete(oldTitle); }
+  storeDraft();
+  ed.cm.refresh();
+  update();
+  return true;
 }
 
 /* ---------- Export ---------- */
@@ -397,14 +540,14 @@ async function save() {
     return false;
   };
   const states = new Map(ed.states);
-  const plan = planSave(text, ed.originals, { folder: ed.folder, base: ed.tags, exists, states });
+  const plan = planSave(text, ed.originals, { folder: ed.folder, base: ed.tags, exists, states, renames: ed.renames });
   if (plan.errors.length) {
     update();
     ui.toast(plan.errors[0].msg + (plan.errors.length > 1 ? ` (+${plan.errors.length - 1})` : ''), 4000);
     return;
   }
-  const { updates, creates, deletes } = plan;
-  if (!updates.length && !creates.length && !deletes.length) {
+  const { updates, creates, moves, deletes } = plan;
+  if (!updates.length && !creates.length && !moves.length && !deletes.length) {
     ed.base = text;
     ed.statesBase = states;
     dropDraft(ed.draftKey);
@@ -420,7 +563,7 @@ async function save() {
   ed.save.disabled = true;
   try {
     // Wurde etwas außerhalb geändert (Obsidian Sync, anderer Tab)?
-    const touched = [...updates, ...deletes].map((c) => ed.originals.find((o) => o.path === c.path));
+    const touched = [...updates, ...deletes, ...moves.map((m) => ({ path: m.from }))].map((c) => ed.originals.find((o) => o.path === c.path));
     const changed = (await Promise.all(touched.map(async (o) => {
       try {
         return (await core.read(o.path)) !== o.text ? o.title : null;
@@ -432,7 +575,7 @@ async function save() {
     if (changed.length && !confirm('Seit dem Öffnen außerhalb geändert:\n\n' + changed.map((t) => `• ${t}`).join('\n') +
       '\n\nTrotzdem mit deinem Stand überschreiben?')) return;
 
-    const done = { updated: 0, created: 0, deleted: 0 };
+    const done = { updated: 0, created: 0, moved: 0, deleted: 0 };
     const fail = [];
     // Erst löschen (frei gewordene Namen, z. B. bei geänderter Groß-/Kleinschreibung), dann ändern, dann anlegen.
     for (const d of deletes) {
@@ -443,6 +586,18 @@ async function save() {
       } catch (err) {
         if (err.name === 'NotFoundError') { ed.originals = ed.originals.filter((o) => o.path !== d.path); continue; }
         fail.push(`${d.title}: ${err.message}`);
+      }
+    }
+    // Umbenennen: neue Datei mit dem bisherigen Inhalt (Frontmatter, Tags), dann die alte entfernen
+    for (const m of moves) {
+      try {
+        await core.create(m.path, m.text);
+        await core.remove(m.from);
+        ed.originals = ed.originals.filter((o) => o.path !== m.from);
+        ed.originals.push({ path: m.path, title: m.title, text: m.text });
+        done.moved++;
+      } catch (err) {
+        fail.push(`${m.oldTitle} → ${m.title}: ${err.message}`);
       }
     }
     for (const u of updates) {
@@ -464,13 +619,15 @@ async function save() {
       }
     }
     const summary = [
-      done.updated && `${done.updated} geändert`, done.created && `${done.created} neu`, done.deleted && `${done.deleted} gelöscht`,
+      done.updated && `${done.updated} geändert`, done.created && `${done.created} neu`, done.moved && `${done.moved} umbenannt`,
+      done.deleted && `${done.deleted} gelöscht`,
     ].filter(Boolean).join(', ');
     if (fail.length) {
       alert('Nicht alles wurde gespeichert' + (summary ? ` (${summary})` : '') + ':\n\n' + fail.join('\n'));
     } else {
       ed.base = text;
       ed.statesBase = states;
+      ed.renames = new Map();
       dropDraft(ed.draftKey);
       ed.issues = [];
       ui.toast(`Gespeichert ✓ ${summary}`);

@@ -239,10 +239,13 @@ function livePreview({ openLink, resolveImage }) {
 
 /* ---------- Zusätzliche Markierungen (z. B. Study: Fragen, Todos, Fehler) ---------- */
 
-/** Punkt am Zeilenanfang (z. B. Review-Status einer Frage); Klick ruft onClick(Zeilenindex) auf. */
+/**
+ * Punkt am Zeilenanfang (z. B. Review-Status einer Frage): Klick ruft onClick(Zeilenindex) auf; Rechtsklick bzw.
+ * langes Drücken (Touch) onMenu(Zeilenindex, Rechteck des Punkts), falls angegeben.
+ */
 class DotWidget extends WidgetType {
-  constructor(cls, title, onClick) { super(); this.cls = cls; this.title = title; this.onClick = onClick; }
-  eq(o) { return o.cls === this.cls && o.title === this.title && o.onClick === this.onClick; }
+  constructor(cls, title, onClick, onMenu) { super(); this.cls = cls; this.title = title; this.onClick = onClick; this.onMenu = onMenu; }
+  eq(o) { return o.cls === this.cls && o.title === this.title && o.onClick === this.onClick && o.onMenu === this.onMenu; }
   toDOM(view) {
     const wrap = document.createElement('span');
     wrap.className = 'cm-dot-wrap';
@@ -250,11 +253,27 @@ class DotWidget extends WidgetType {
     b.className = 'cm-dot ' + this.cls;
     b.title = this.title;
     b.setAttribute('role', 'button');
+    const line = () => view.state.doc.lineAt(view.posAtDOM(wrap)).number - 1;
+    let menuAt = 0;
+    let timer = 0;
+    const menu = () => { // contextmenu und Touch-Timer können beide auslösen: nur einmal öffnen
+      clearTimeout(timer);
+      if (Date.now() - menuAt < 700) return;
+      menuAt = Date.now();
+      this.onMenu(line(), b.getBoundingClientRect());
+    };
     b.addEventListener('mousedown', (e) => e.preventDefault());
     b.addEventListener('click', (e) => {
       e.preventDefault();
-      this.onClick(view.state.doc.lineAt(view.posAtDOM(wrap)).number - 1);
+      if (Date.now() - menuAt < 700) return; // Klick direkt nach langem Drücken
+      this.onClick(line());
     });
+    if (this.onMenu) {
+      b.addEventListener('contextmenu', (e) => { e.preventDefault(); menu(); });
+      // Touch: eigener Timer, falls der Browser kein contextmenu meldet
+      b.addEventListener('touchstart', () => { clearTimeout(timer); timer = setTimeout(menu, 500); }, { passive: true });
+      for (const ev of ['touchend', 'touchmove', 'touchcancel']) b.addEventListener(ev, () => clearTimeout(timer), { passive: true });
+    }
     wrap.append(b);
     return wrap;
   }
@@ -264,7 +283,7 @@ class DotWidget extends WidgetType {
 const refreshMarks = StateEffect.define();
 
 /**
- * `decorate(text)` → [{ line (0-basiert), class } | { line, from, to, class } | { line, dot: { class, title, onClick } }]
+ * `decorate(text)` → [{ line (0-basiert), class } | { line, from, to, class } | { line, dot: { class, title, onClick, onMenu } }]
  * (from/to = Spalten). Wird bei jeder Änderung (und bei refresh()) für das ganze Dokument neu berechnet (für
  * Dokumente in Notizgröße unkritisch).
  */
@@ -280,13 +299,36 @@ function extraMarks(decorate) {
       for (const d of decorate(doc.toString())) {
         if (d.line >= doc.lines) continue;
         const l = doc.line(d.line + 1);
-        if (d.dot) out.push(Decoration.widget({ widget: new DotWidget(d.dot.class, d.dot.title, d.dot.onClick), side: -1 }).range(l.from));
+        if (d.dot) out.push(Decoration.widget({ widget: new DotWidget(d.dot.class, d.dot.title, d.dot.onClick, d.dot.onMenu), side: -1 }).range(l.from));
         else if (d.from == null) out.push(Decoration.line({ class: d.class }).range(l.from));
         else if (d.to > d.from) out.push(Decoration.mark({ class: d.class }).range(l.from + d.from, l.from + Math.min(d.to, l.length)));
       }
       return Decoration.set(out, true);
     }
   }, { decorations: (v) => v.decorations });
+}
+
+/**
+ * Gesperrte Stellen: `locked(text)` → [{ from, to }] (Dokument-Positionen). Eingaben, Löschen, Einfügen, Rückgängig usw.,
+ * die eine Sperre berühren, werden verworfen (Einfügen direkt davor oder dahinter geht) und `onLocked()` gerufen.
+ * Änderungen aus dem Code (ohne userEvent, z. B. Umbenennen) gehen durch.
+ */
+function lockedRanges(locked, onLocked) {
+  const USER = ['input', 'delete', 'move', 'undo', 'redo'];
+  return EditorState.transactionFilter.of((tr) => {
+    if (!tr.docChanged || !USER.some((e) => tr.isUserEvent(e))) return tr;
+    const ranges = locked(tr.startState.doc.toString());
+    if (!ranges.length) return tr;
+    let blocked = false;
+    tr.changes.iterChangedRanges((fromA, toA) => {
+      for (const r of ranges) {
+        if (fromA === toA ? fromA > r.from && fromA < r.to : fromA < r.to && toA > r.from) blocked = true;
+      }
+    });
+    if (!blocked) return tr;
+    onLocked?.();
+    return [];
+  });
 }
 
 /* ---------- Korrekturvorschläge (Desktop) ---------- */
@@ -759,6 +801,7 @@ function continueList(view) {
  * opts: { parent, doc, onChange(text), placeholder, decorate(text), openLink(target), resolveImage(link) → Promise<URL>,
  *         spell (siehe spell.js, nur am Desktop übergeben), ai (siehe aicorrect.js, nur am Desktop),
  *         prompt (siehe prompts.js, nur am Desktop), tags (siehe tags.js: Tag-Vorschläge),
+ *         locked(text) → [{ from, to }] + onLocked() (gesperrte Stellen, siehe lockedRanges),
  *         saveImage(file) → Promise<Markdown-Link> }
  * Gibt { view, value, set(text), focus(), jumpToLine(i), refresh(), destroy() } zurück.
  */
@@ -793,6 +836,7 @@ export function createEditor(opts) {
     opts.spell || opts.ai ? wordMenu({ spell: opts.spell, ai: opts.ai }) : [],
     opts.prompt ? selectionPrompt(opts.prompt) : [],
     opts.tags ? tagComplete(opts.tags) : [],
+    opts.locked ? lockedRanges(opts.locked, opts.onLocked) : [],
     opts.saveImage ? imagePaste(opts.saveImage) : [],
     EditorView.updateListener.of((u) => { if (u.docChanged) opts.onChange?.(u.state.doc.toString()); }),
   ];

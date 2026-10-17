@@ -136,12 +136,13 @@ const desktop = matchMedia('(hover: hover) and (pointer: fine)').matches;
 const spell = desktop ? createSpell({ notes: () => core.list() }) : null;
 if (spell) core.on('change', () => spell.invalidate());
 const ai = desktop ? aiCorrect : null; // KI-Vorschläge per Doppelklick, ebenfalls nur am Computer
-const prompts = desktop ? createPrompts({ notes: () => core.list() }) : null; // Prompt auf markierten Text
+// KI-Prompts: am Computer auf markierten Text, überall über das Menü am Punkt einer Frage (Study)
+const prompts = createPrompts({ notes: () => core.list() });
 
 const tags = createTagIndex({ notes: () => core.list() }); // Tag-Vorschläge im Editor (auch auf dem Handy)
 core.on('change', () => tags.invalidate());
 
-const ui = { core, toast, openNote, openLink, resolveImage, saveImage, spell, ai, prompts, tags, pickVault };
+const ui = { core, toast, openNote, openLink, resolveImage, saveImage, spell, ai, prompts, tags, desktop, pickVault };
 
 /* ---------- Editor ---------- */
 
@@ -242,7 +243,7 @@ async function init() {
     saveImage,
     spell,
     ai,
-    prompt: prompts,
+    prompt: desktop ? prompts : null,
     tags,
   });
   document.addEventListener('keydown', (e) => {
