@@ -307,6 +307,10 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .rate.hard { border-color: var(--red); color: var(--red); }
 .rate.good { border-color: var(--accent); color: var(--accent); }
 .rate.easy { border-color: var(--green); color: var(--green); }
+.done-choices { flex-direction: column; gap: 6px; }
+.done-title { color: var(--muted); font-size: .85rem; text-align: center; }
+.done-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.done-grid .rate { min-height: 52px; padding: 0 4px; }
 .card-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 20px; padding-top: 4px; }
 .card-done { display: flex; flex-direction: column; gap: 12px; padding-top: 24px; }
 

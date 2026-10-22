@@ -131,29 +131,18 @@ export function formatInterval(days) {
 
 // Intervall = { n, unit } mit unit d (Tage), w (Wochen), m (Monate), y (Jahre). Monate und Jahre zählen nach dem
 // Kalender (15.01. + 1 Monat = 15.02.; am Monatsende wird gekürzt). Tags: #review/daily|weekly|monthly|yearly
-// oder #review/<n><einheit>, z. B. #review/3d, #review/2w, #review/3m, #review/1y (auch 3months, 2jahre, …).
-const UNIT_WORDS = {
-  d: ['d', 't', 'day', 'days', 'tag', 'tage'],
-  w: ['w', 'wk', 'week', 'weeks', 'woche', 'wochen'],
-  m: ['m', 'mo', 'mon', 'month', 'months', 'monat', 'monate'],
-  y: ['y', 'j', 'year', 'years', 'jahr', 'jahre'],
-};
-const NAMED = {
-  daily: { n: 1, unit: 'd' }, weekly: { n: 1, unit: 'w' }, monthly: { n: 1, unit: 'm' },
-  quarterly: { n: 3, unit: 'm' }, yearly: { n: 1, unit: 'y' },
-};
-const UNIT_OF = Object.fromEntries(Object.entries(UNIT_WORDS).flatMap(([u, ws]) => ws.map((w) => [w, u])));
-const UNIT_DAYS = { d: 1, w: 7, m: 30, y: 365 }; // nur zum Sortieren/Begrenzen
+// oder #review/<n><einheit>, z. B. #review/3d, #review/2w, #review/3m, #review/2y.
+const NAMED = { daily: { n: 1, unit: 'd' }, weekly: { n: 1, unit: 'w' }, monthly: { n: 1, unit: 'm' }, yearly: { n: 1, unit: 'y' } };
 const MAX_N = 999;
 
-/** Intervall aus dem Teil hinter #review/ ('weekly', '3m', '2wochen' …) oder null. */
+/** Intervall aus dem Teil hinter #review/ ('weekly', '3m' …) oder null. */
 export function parseInterval(s) {
   const k = String(s || '').toLowerCase();
   if (Object.hasOwn(NAMED, k)) return { ...NAMED[k] };
-  const m = /^(\d{1,3})[-_]?([a-z]+)$/.exec(k);
-  if (!m || !Object.hasOwn(UNIT_OF, m[2])) return null;
+  const m = /^(\d{1,3})([dwmy])$/.exec(k);
+  if (!m) return null;
   const n = +m[1];
-  return n >= 1 && n <= MAX_N ? { n, unit: UNIT_OF[m[2]] } : null;
+  return n >= 1 && n <= MAX_N ? { n, unit: m[2] } : null;
 }
 
 /** Tag-Teil hinter #review/: die alten Namen für 1 Tag/Woche/Monat/Jahr (wie im Obsidian-Snippet), sonst z. B. 3m. */
@@ -163,11 +152,10 @@ export function intervalTag(iv) {
 }
 
 export const sameInterval = (a, b) => !!a && !!b && a.n === b.n && a.unit === b.unit;
-export const intervalApproxDays = (iv) => iv.n * UNIT_DAYS[iv.unit];
 
-/** Tag `day` + Intervall (Monate/Jahre nach dem Kalender). `times` = wie oft (z. B. 2 für doppelten Abstand). */
-export function addInterval(day, iv, times = 1) {
-  const n = iv.n * times;
+/** Tag `day` + Intervall (Monate/Jahre nach dem Kalender). */
+export function addInterval(day, iv) {
+  const n = iv.n;
   if (iv.unit === 'd') return day + n;
   if (iv.unit === 'w') return day + 7 * n;
   const d = new Date(day * 864e5);
@@ -208,15 +196,12 @@ function findFixedTag(text) {
   return null;
 }
 
-/**
- * Setzt das feste Intervall: ersetzt den vorhandenen #review/…-Tag, sonst an die Tag-Zeile. Ein abweichender
- * nächster Termin (review-next) fällt weg – fällig ist die Notiz dann wieder nach #reviewed/… + neuem Intervall.
- */
+/** Setzt das feste Intervall: ersetzt den vorhandenen #review/…-Tag, sonst an die Tag-Zeile. */
 export function setFixedInterval(text, iv) {
   const tag = '#' + REVIEW_PREFIX + intervalTag(iv);
   const hit = findFixedTag(text);
-  const out = hit ? text.slice(0, hit.index) + tag + text.slice(hit.index + hit.length) : addTagsToText(text, [tag.slice(1)]);
-  return setFrontmatterFields(out, { [NEXT_FIELD]: null });
+  if (hit) return text.slice(0, hit.index) + tag + text.slice(hit.index + hit.length);
+  return addTagsToText(text, [tag.slice(1)]);
 }
 
 /** Letztes Review-Datum (Tag) aus #reviewed/JJJJ/MM/TT oder null. */
@@ -237,37 +222,9 @@ export function setReviewed(text, day) {
   return addTagsToText(text, [tag.slice(1)]);
 }
 
-// Einmalig abweichender nächster Termin („früher/später wieder“), ohne das Intervall zu ändern. Steht in der
-// Frontmatter und gilt statt #reviewed/… + Intervall; ein normales „Erledigt“ entfernt das Feld wieder.
-export const NEXT_FIELD = 'review-next';
-
-/** Abweichender nächster Termin (Tag) aus der Frontmatter oder null. */
-export const fixedNext = (text) => isoToDay(parseFrontmatter(text)[NEXT_FIELD]);
-
-/** Nächster Termin einer Notiz mit festem Intervall (`last` = letztes Review oder null). */
-export function fixedDue(text, iv, last, day) {
-  const next = fixedNext(text);
-  if (next != null) return next;
-  return last == null ? day : addInterval(last, iv);
-}
-
-/** Varianten von „Erledigt“: { key, due } – früher (halber Abstand), normal, später (doppelter Abstand). */
-export function doneOptions(iv, day) {
-  const normal = addInterval(day, iv);
-  const sooner = day + Math.max(1, Math.round((normal - day) / 2));
-  const later = addInterval(day, iv, 2);
-  const out = [];
-  if (sooner < normal) out.push({ key: 'sooner', due: sooner });
-  out.push({ key: 'done', due: normal });
-  out.push({ key: 'later', due: later });
-  return out;
-}
-
-/** Erledigt am Tag `day`; `due` = nächster Termin (ohne = normal nach Intervall). */
-export function markDone(text, iv, day, due) {
-  const after = setReviewed(text, day);
-  const custom = due != null && due !== addInterval(day, iv);
-  return setFrontmatterFields(after, { [NEXT_FIELD]: custom ? dayToIso(due) : null });
+/** Erledigt am Tag `day`, wieder fällig nach `iv` (wird zum neuen Intervall der Notiz). */
+export function markDone(text, iv, day) {
+  return setReviewed(setFixedInterval(text, iv), day);
 }
 
 /* ---------- Review.md ---------- */
@@ -342,9 +299,9 @@ export function buildCards(notes, decks, day) {
     const iv = fixedInterval(n.tags);
     if (iv) {
       const last = reviewedDay(n.tags);
-      const due = fixedDue(n.text, iv, last, day);
+      const due = last == null ? day : addInterval(last, iv);
       cards.push({ path: n.path, kind: 'fixed', decks: [], interval: iv, isNew: false,
-        unseeded: last == null && fixedNext(n.text) == null, due, overdue: day - due });
+        unseeded: last == null, due, overdue: day - due });
       continue;
     }
     if (reviewState(n.text) !== 'ready') continue;

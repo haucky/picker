@@ -6,15 +6,14 @@ import { renderMarkdown } from './markdown.js';
 import {
   CONFIG_PATH, RESPONSES, parseDecks, buildCards, srState, nextState, writeState, dueDateCounts,
   formatInterval, setReviewed, seedDay, splitAnswers, appendAnswer, cardBody, today, isConfig,
-  setReviewState, fixedInterval, reviewedDay, fixedDue, fixedNext, setFixedInterval, doneOptions, markDone,
+  setReviewState, fixedInterval, reviewedDay, setFixedInterval, markDone, addInterval,
   formatFixed, formatIntervalShort, sameInterval, intervalTag, dayToGerman,
 } from './srs.js';
 import { studyOrder } from './studydoc.js';
 
 const RESPONSE_LABEL = { hard: 'Schwer', good: 'Gut', easy: 'Leicht' };
-const DONE_LABEL = { sooner: 'Früher wieder', done: '✅ Erledigt', later: 'Später wieder' };
-const DONE_CLASS = { sooner: 'hard', done: 'good', later: 'easy' };
-const DONE_KEYS = ['sooner', 'done', 'later'];
+// Auswahl beim Erledigen fester Intervalle; die gewählte wird zum neuen Intervall der Notiz.
+const DONE_CHOICES = [[1, 'd'], [1, 'w'], [1, 'm'], [2, 'm'], [3, 'm'], [1, 'y']].map(([n, unit]) => ({ n, unit }));
 const INTERVAL_PRESETS = [[1, 'd'], [1, 'w'], [2, 'w'], [1, 'm'], [2, 'm'], [3, 'm'], [6, 'm'], [1, 'y'], [2, 'y']]
   .map(([n, unit]) => ({ n, unit }));
 const UNIT_NAMES = { d: 'Tage', w: 'Wochen', m: 'Monate', y: 'Jahre' };
@@ -338,9 +337,13 @@ function answerBox(note) {
 function ratingRow(card, note) {
   const day = today();
   if (card.kind === 'fixed') {
-    return h('div', { class: 'ratings' }, ...doneOptions(card.interval, day).map((o) =>
-      h('button', { type: 'button', class: 'rate ' + DONE_CLASS[o.key], onclick: () => rate(o.key) },
-        DONE_LABEL[o.key], h('small', { title: dayToGerman(o.due) }, doneIn(o, card.interval, day)))));
+    return h('div', { class: 'ratings done-choices' },
+      h('div', { class: 'done-title' }, '✅ Erledigt – wieder:'),
+      h('div', { class: 'done-grid' }, ...doneChoices(card.interval).map((iv) =>
+        h('button', {
+          type: 'button', class: 'rate' + (sameInterval(iv, card.interval) ? ' good' : ''),
+          title: '#review/' + intervalTag(iv), onclick: () => rate('done', iv),
+        }, doneLabel(iv), h('small', {}, dayToGerman(addInterval(day, iv)))))));
   }
   const st = srState(note.text);
   const dd = dueDateCounts(core.list(), day, note.path);
@@ -351,13 +354,13 @@ function ratingRow(card, note) {
   }));
 }
 
-/** „in 3 Monaten“ (normal/später, nach dem Kalender) bzw. „in 46 T“ (früher, halber Abstand in Tagen). */
-function doneIn(opt, iv, day) {
-  if (opt.key === 'sooner') return 'in ' + formatInterval(opt.due - day);
-  const n = iv.n * (opt.key === 'later' ? 2 : 1);
-  const unit = (n === 1 ? { d: 'Tag', w: 'Woche', m: 'Monat', y: 'Jahr' } : { d: 'Tagen', w: 'Wochen', m: 'Monaten', y: 'Jahren' })[iv.unit];
-  return `in ${n} ${unit}`;
+/** Feste Auswahl, dazu das aktuelle Intervall, falls es nicht dabei ist (z. B. 2 Wochen). */
+function doneChoices(current) {
+  return DONE_CHOICES.some((iv) => sameInterval(iv, current)) ? DONE_CHOICES : [current, ...DONE_CHOICES];
 }
+
+const doneLabel = (iv) => (iv.n === 1 && iv.unit !== 'm' ? formatFixed(iv)
+  : `${iv.n} ${(iv.n === 1 ? { d: 'Tag', w: 'Woche', m: 'Monat', y: 'Jahr' } : { d: 'Tage', w: 'Wochen', m: 'Monate', y: 'Jahre' })[iv.unit]}`);
 
 function actions(card) {
   return h('div', { class: 'card-actions' },
@@ -388,7 +391,8 @@ function skip() {
 }
 
 let busy = false;
-async function rate(response) {
+/** Bewertung; bei festem Intervall `response` = 'done' und `iv` = gewähltes Intervall (ohne = bisheriges). */
+async function rate(response, iv) {
   const card = current();
   if (!card || busy) return;
   busy = true;
@@ -399,9 +403,7 @@ async function rate(response) {
       before = text;
       if (card.kind === 'fixed') {
         // Intervall aus der aktuellen Datei (kann inzwischen im Editor geändert worden sein)
-        const iv = fixedInterval(parseTags(text)) || card.interval;
-        const opt = doneOptions(iv, day).find((o) => o.key === response) || doneOptions(iv, day).find((o) => o.key === 'done');
-        after = markDone(text, iv, day, opt.due);
+        after = markDone(text, iv || fixedInterval(parseTags(text)) || card.interval, day);
       } else {
         const dd = dueDateCounts(core.list(), day, card.path);
         after = writeState(text, nextState(srState(text), response, day, dd));
@@ -426,9 +428,9 @@ function refreshFixed(card, text) {
   const day = today();
   const last = reviewedDay(tags);
   card.interval = iv;
-  card.due = fixedDue(text, iv, last, day);
+  card.due = last == null ? day : addInterval(last, iv);
   card.overdue = day - card.due;
-  card.unseeded = last == null && fixedNext(text) == null;
+  card.unseeded = last == null;
 }
 
 /** Festes Intervall der aktuellen Karte ändern (#review/…-Tag); Rückgängig wie bei einer Bewertung. */
@@ -538,8 +540,8 @@ export default {
       }
     });
 
-    // Tastatur (Laptop): Leertaste = zeigen, 1/2/3 = Schwer/Gut/Leicht bzw. früher/erledigt/später, Enter = Erledigt,
-    // u = rückgängig
+    // Tastatur (Laptop): Leertaste = zeigen, 1/2/3 = Schwer/Gut/Leicht, Enter = Erledigt (bisheriges Intervall),
+    // 1–7 = Erledigt mit Intervall aus der Auswahl, u = rückgängig
     document.addEventListener('keydown', (e) => {
       if (!session || root.hidden || sessionEl.hidden || e.ctrlKey || e.metaKey || e.altKey) return;
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) return;
@@ -550,7 +552,10 @@ export default {
       if (e.key === 'u') { undo(); return; }
       if (!session.revealed) return;
       if (card.kind === 'fixed' && e.key === 'Enter') { e.preventDefault(); rate('done'); }
-      if (card.kind === 'fixed' && /^[123]$/.test(e.key)) rate(DONE_KEYS[+e.key - 1]);
+      if (card.kind === 'fixed' && /^[1-9]$/.test(e.key)) {
+        const iv = doneChoices(card.interval)[+e.key - 1];
+        if (iv) rate('done', iv);
+      }
       if (card.kind === 'sr' && /^[123]$/.test(e.key)) rate(RESPONSES[+e.key - 1]);
     });
   },
