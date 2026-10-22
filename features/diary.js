@@ -1,10 +1,11 @@
-// Tab Diary: fasst die Funktionen für die persönlichen Diary-Einträge zusammen – Taggen und Streams – mit
+// Tab Diary: fasst die Funktionen für die persönlichen Diary-Einträge zusammen – Schreiben, Taggen und Streams – mit
 // einem Umschalter oben. Der zuletzt gewählte Bereich wird gemerkt.
 import { h } from './dom.js';
+import write from './diarywrite.js';
 import tagging from './tagging.js';
 import streams from './streams.js';
 
-const SUBS = [tagging, streams];
+const SUBS = [write, tagging, streams];
 const STORE = 'diary-sub';
 
 let roots = new Map();

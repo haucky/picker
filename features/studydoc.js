@@ -1,7 +1,7 @@
 // Study-Logik ohne DOM: alle TILs einer Vorlesung (VL = Datum in einem Stapel) als ein Fließtext-Dokument
 // und der Abgleich dieses Dokuments mit den Dateien (ändern, neu anlegen, löschen).
 import { parseFrontmatter, setFrontmatterFields, splitFrontmatter, parseTags } from '../core.js';
-import { inDeck, isConfig, dayToTagDate, reviewState, setReviewState } from './srs.js';
+import { inDeck, isConfig, dayOf, dayToIso, dayToTagDate, reviewState, setReviewState } from './srs.js';
 
 export const ORDER_FIELD = 'study-order';
 const TODO_RE = /(^|\s)(!{3,})/;
@@ -139,6 +139,24 @@ export function setTagLine(text, tags) {
 
 /* ---------- Dokument ---------- */
 
+// Datumszeile „TT.MM.JJJJ“ (allein, nicht eingerückt): die folgenden Fragen bekommen dieses #date/….
+const DAY_LINE_RE = /^(\d{2})\.(\d{2})\.(\d{4})[ \t]*$/;
+
+/** Datumszeile → { day } (Kalendertag) bzw. { invalid: true } bei unmöglichem Datum, sonst null. */
+export function parseDayLine(line) {
+  const m = DAY_LINE_RE.exec(line);
+  if (!m) return null;
+  const day = dayOf(+m[3], +m[2], +m[1]);
+  return dayToIso(day) === `${m[3]}-${m[2]}-${m[1]}` ? { day } : { invalid: true };
+}
+
+const isDateTag = (t) => /^date\//i.test(t);
+
+/** Grund-Tags für den Tag `day`: das #date/… aus `base` wird ersetzt (bzw. ergänzt). */
+export function baseForDay(base, day) {
+  return [...base.filter((t) => !isDateTag(t)), 'date/' + dayToTagDate(day)];
+}
+
 const QUESTION_RE = /^(.*?\?)((?:[ \t]+#(?=[\p{L}\p{N}_\-/]*[\p{L}_\-])[\p{L}\p{N}_\-/]+)*)[ \t]*$/u;
 
 /**
@@ -172,8 +190,10 @@ export function buildDoc(notes, base) {
 }
 
 /**
- * Zerlegt das Dokument in Fragen: { items: [{ title, tags, body, line }], errors, warnings }, Fehler und
+ * Zerlegt das Dokument in Fragen: { items: [{ title, tags, body, line, day }], errors, warnings }, Fehler und
  * Warnungen als [{ line, msg }]. `line` ist der 0-basierte Zeilenindex. Zeilen in Codeblöcken sind nie Fragen.
+ * Eine Datumszeile „TT.MM.JJJJ“ beendet die Frage davor und gilt für alle folgenden Fragen (`day`; ohne
+ * Datumszeile null = Datum des Dokuments). Text zwischen Datumszeile und nächster Frage gehört zu keiner Frage.
  * Warnung (speichern geht trotzdem): Zeile sieht nach Frage mit Tags aus, ist aber keine (z. B. „Frage? #a b“).
  */
 export function parseDoc(text) {
@@ -181,28 +201,37 @@ export function parseDoc(text) {
   const items = [];
   const errors = [];
   const warnings = [];
-  const pre = [];
   let cur = null;
   let fence = null;
+  let day = null;
+  let orphan = false; // in diesem Abschnitt ohne Frage schon Text gemeldet?
   lines.forEach((line, i) => {
     const f = /^\s*(`{3,}|~{3,})/.exec(line);
     if (fence) {
       if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null;
     } else if (f) {
       fence = f[1];
+    } else if (parseDayLine(line)) {
+      const d = parseDayLine(line);
+      if (d.invalid) errors.push({ line: i, msg: 'Kein gültiges Datum' });
+      else day = d.day;
+      cur = null;
+      orphan = false;
+      return;
     } else if (parseQuestion(line)) {
       const q = parseQuestion(line);
-      cur = { title: q.title, tags: q.tags, line: i, lines: [] };
+      cur = { title: q.title, tags: q.tags, line: i, day, lines: [] };
       items.push(cur);
       return;
     } else if (/\?[ \t]+#/.test(line) && isQuestionCandidate(line)) {
       warnings.push({ line: i, msg: 'Keine Frage: hinter dem „?“ dürfen nur Tags stehen – die Zeile gehört zum Inhalt der Frage davor' });
     }
-    (cur ? cur.lines : pre).push(i);
+    if (cur) cur.lines.push(i);
+    else if (line.trim() && !orphan) {
+      orphan = true;
+      errors.push({ line: i, msg: items.length || day != null ? 'Text nach dem Datum gehört zu keiner Frage' : 'Text vor der ersten Frage gehört zu keiner Frage' });
+    }
   });
-
-  const firstText = pre.find((i) => lines[i].trim());
-  if (firstText != null) errors.push({ line: firstText, msg: 'Text vor der ersten Frage gehört zu keiner Frage' });
 
   const seen = new Map();
   for (const it of items) {
@@ -233,13 +262,18 @@ export function roundtripIssues(notes, base) {
 
 /**
  * Notiz mit neuem Inhalt, neuen abweichenden Tags, Reihenfolge und ggf. Review-Status (`state`, siehe srs.js).
- * Frontmatter (SR-Stand) und Zeilenumbrüche bleiben; die Tag-Zeile wird nur angefasst, wenn sich die abweichenden
- * Tags geändert haben.
+ * `day` (aus einer Datumszeile) setzt das #date/… neu. Frontmatter (SR-Stand) und Zeilenumbrüche bleiben; die
+ * Tag-Zeile wird nur angefasst, wenn sich die abweichenden Tags oder das Datum geändert haben.
  */
-export function applyItem(text, { body, tags }, order, base, state) {
+export function applyItem(text, { body, tags, day }, order, base, state) {
   const lower = new Set(base.map((t) => t.toLowerCase()));
-  const keep = tagLineTags(text).filter((t) => lower.has(t.toLowerCase()));
-  if (extraTags(text, base).join(' ') !== tags.join(' ')) text = setTagLine(text, [...keep, ...tags]);
+  let keep = tagLineTags(text).filter((t) => lower.has(t.toLowerCase()));
+  let redate = false;
+  if (day != null) {
+    const dt = 'date/' + dayToTagDate(day);
+    if (!keep.some((t) => t.toLowerCase() === dt)) { keep = [...keep.filter((t) => !isDateTag(t)), dt]; redate = true; }
+  }
+  if (redate || extraTags(text, base).join(' ') !== tags.join(' ')) text = setTagLine(text, [...keep, ...tags]);
   if (state && reviewState(text) !== state) text = setReviewState(text, state);
   return applyBody(text, body, order);
 }
@@ -257,19 +291,25 @@ export function applyBody(text, body, order) {
   return out;
 }
 
+/** Neue Notiz: Tag-Zeile, Inhalt; Reihenfolge (study-order) nur, wenn `order` gesetzt ist. */
 export function newNoteText(tags, body, order, state = 'open') {
-  const text = `---\n${ORDER_FIELD}: ${order}\n---\n${tags.map((t) => '#' + t).join(' ')}\n${body ? body + '\n' : ''}`;
+  const front = order == null ? '' : `---\n${ORDER_FIELD}: ${order}\n---\n`;
+  const text = `${front}${tags.map((t) => '#' + t).join(' ')}\n${body ? body + '\n' : ''}`;
   return state === 'open' ? text : setReviewState(text, state);
 }
 
 /**
  * Plant das Speichern. `originals`: [{ path, title, text }] = Stand der VL beim Öffnen.
- * ctx: { folder, base (Grund-Tags), exists(path) → bool (Groß-/Kleinschreibung egal),
+ * ctx: { folder, base (Grund-Tags inkl. #date/… des Dokuments), day (Datum des Dokuments oder null),
+ *        exists(path) → bool (Groß-/Kleinschreibung egal),
  *        states: Map Frage-Titel → Review-Status (optional; fehlende Titel bleiben wie sie sind bzw. open),
  *        renames: Map neuer Titel → alter Titel (optional; über „Umbenennen“: die Notiz zieht mit Frontmatter
- *        und Tags um, statt neu angelegt zu werden – der SR-Stand bleibt) }.
- * Gibt { errors, updates, creates, moves, deletes } zurück; jede Änderung als { path, title, text? },
- * moves zusätzlich mit `from` (alter Pfad) und `oldTitle`.
+ *        und Tags um, statt neu angelegt zu werden – der SR-Stand bleibt),
+ *        existsHint: Zusatz zur Fehlermeldung, wenn es eine neue Datei schon gibt (optional),
+ *        order: false = neue Notizen ohne study-order (z. B. Diary) }.
+ * Fragen unter einer Datumszeile mit anderem Datum bekommen dessen #date/… (und gehören danach zu einer anderen VL).
+ * Gibt { errors, updates, creates, moves, deletes, redated } zurück; jede Änderung als { path, title, day, text? },
+ * moves zusätzlich mit `from` (alter Pfad) und `oldTitle`; `redated` = Titel der Fragen mit geändertem Datum.
  */
 export function planSave(doc, originals, ctx) {
   const { items, errors } = parseDoc(doc);
@@ -279,10 +319,15 @@ export function planSave(doc, originals, ctx) {
   const byTitle = new Map(originals.map((o) => [o.title, o]));
   const titles = new Set(items.map((it) => it.title));
   const used = new Set();
-  const baseLower = new Set(ctx.base.map((t) => t.toLowerCase()));
+  const redated = [];
   items.forEach((it, i) => {
-    const seen = new Set(baseLower);
-    it = { ...it, tags: it.tags.filter((t) => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase())) };
+    // Datumszeile mit dem Datum des Dokuments ändert nichts
+    const day = it.day != null && it.day !== ctx.day ? it.day : null;
+    const base = day != null ? baseForDay(ctx.base, day) : ctx.base;
+    const seen = new Set(base.map((t) => t.toLowerCase()));
+    it = { ...it, day, tags: it.tags.filter((t) => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase())) };
+    const itemDay = day ?? ctx.day ?? null;
+    const movesDay = (text, d) => d != null && !tagLineTags(text).some((t) => t.toLowerCase() === 'date/' + dayToTagDate(d));
     const state = ctx.states?.get(it.title);
     let o = byTitle.get(it.title);
     if (!o && ctx.renames?.has(it.title)) {
@@ -292,23 +337,26 @@ export function planSave(doc, originals, ctx) {
     if (o && o.title !== it.title) {
       used.add(o.path);
       const dir = o.path.includes('/') ? o.path.slice(0, o.path.lastIndexOf('/') + 1) : '';
-      moves.push({ from: o.path, path: dir + it.title + '.md', title: it.title, oldTitle: o.title, line: it.line,
-        text: applyItem(o.text, it, i + 1, ctx.base, state) });
+      const text = applyItem(o.text, it, i + 1, ctx.base, state);
+      if (movesDay(o.text, day)) redated.push(it.title);
+      moves.push({ from: o.path, path: dir + it.title + '.md', title: it.title, oldTitle: o.title, line: it.line, day: itemDay, text });
     } else if (o) {
       used.add(o.path);
       const text = applyItem(o.text, it, i + 1, ctx.base, state);
-      if (text !== o.text) updates.push({ path: o.path, title: o.title, text });
+      if (movesDay(o.text, day)) redated.push(it.title);
+      if (text !== o.text) updates.push({ path: o.path, title: o.title, day: itemDay, text });
     } else {
       const path = (ctx.folder ? ctx.folder + '/' : '') + it.title + '.md';
-      creates.push({ path, title: it.title, line: it.line, text: newNoteText([...ctx.base, ...it.tags], it.body, i + 1, state) });
+      if (day != null) redated.push(it.title);
+      creates.push({ path, title: it.title, line: it.line, day: itemDay, text: newNoteText([...base, ...it.tags], it.body, ctx.order === false ? null : i + 1, state) });
     }
   });
   const deletes = originals.filter((o) => !used.has(o.path)).map((o) => ({ path: o.path, title: o.title }));
   const freed = new Set([...deletes, ...moves.map((m) => ({ path: m.from }))].map((d) => d.path.toLowerCase()));
   for (const c of [...creates, ...moves]) {
     if (ctx.exists(c.path) && !freed.has(c.path.toLowerCase())) {
-      errors.push({ line: c.line, msg: `„${c.path}“ gibt es schon im Vault (in einer anderen VL oder einem anderen Stapel)` });
+      errors.push({ line: c.line, msg: `„${c.path}“ gibt es schon im Vault` + (ctx.existsHint ?? ' (in einer anderen VL oder einem anderen Stapel)') });
     }
   }
-  return { errors, updates, creates, moves, deletes };
+  return { errors, updates, creates, moves, deletes, redated };
 }

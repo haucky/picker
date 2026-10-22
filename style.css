@@ -402,6 +402,7 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 /* Study: Fragen, Todos, Antwort-Daten, Fehler/Warnungen */
 .md-editor .cm-q { color: var(--accent); font-weight: 600; }
 .md-editor .cm-todo { color: var(--orange); background: var(--todo-bg); border-radius: 3px; }
+.md-editor .cm-dayline { color: var(--violet); font-weight: 600; border-bottom: 1px dashed currentColor; }
 .md-editor .cm-todo-2 { color: var(--magenta); }
 .md-editor .cm-todo-3 { color: var(--red); background: var(--err-bg); font-weight: 600; }
 .md-editor .cm-date { color: var(--magenta); }
@@ -695,6 +696,13 @@ img.img-big { max-width: 100%; }
 }
 
 /* Diary: Umschalter Taggen / Streams */
+.diary-write { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
+.diary-write .path { margin: 0; overflow-wrap: anywhere; }
+.dw-head { display: flex; align-items: center; gap: 10px; }
+.dw-head .section { margin: 8px 0 0; flex: 1; }
+.dw-head .count { color: var(--muted); font-size: .85rem; }
+.dw-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dw-label { color: var(--muted); font-size: .85rem; margin-right: 2px; }
 .subtabs { display: flex; gap: 4px; background: var(--surface); border-radius: 10px; padding: 3px; margin: 12px 0 0; }
 .subtabs button, .st-modes button { flex: 1; border: 0; background: none; padding: 8px 0; border-radius: 8px; font-size: .9rem; color: var(--text-2); }
 .subtabs button.on, .st-modes button.on { background: var(--bg); color: var(--accent); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }

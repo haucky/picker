@@ -13,7 +13,7 @@ Minimale PWA, um auf dem Android-Handy einen lokalen Obsidian-Vault schnell zu d
 ## Benutzung
 
 - **Vault öffnen** tippen und im Ordner-Dialog **nur den Vault-Ordner** auswählen (den Ordner, der `.obsidian/` enthält) – nicht „Interner Speicher“, „Documents“ o. Ä. Die App bekommt Lese- *und Schreib*zugriff auf genau diesen Ordner samt Unterordnern; gib ihr nicht mehr als nötig.
-Unten wechselst du zwischen den Modulen **Home** (mit der Suche), **Study**, **Review**, **Diary** (darin **Taggen** und **Streams**) und **Settings**. Beim Öffnen der App startet sie immer auf **Home**.
+Unten wechselst du zwischen den Modulen **Home** (mit der Suche), **Study**, **Review**, **Diary** (darin **Schreiben**, **Taggen** und **Streams**) und **Settings**. Beim Öffnen der App startet sie immer auf **Home**.
 
 ### Suche (auf Home)
 
@@ -21,6 +21,27 @@ Unten wechselst du zwischen den Modulen **Home** (mit der Suche), **Study**, **R
 - Getippter Text wird mit Dateinamen und Inhalt aller Notizen abgeglichen (Teilstring, ohne Groß-/Kleinschreibung; mehrere Wörter müssen alle vorkommen). Treffer im Namen stehen oben, darunter ein Textausschnitt mit markierter Fundstelle. Enter öffnet den ersten Treffer.
 - Treffer antippen → Notiz bearbeiten → **Speichern** schreibt die Datei direkt zurück. Die Android-Zurück-Geste führt zurück zu Home (mit Warnung bei ungespeicherten Änderungen).
 - `.obsidian/`, `.trash/` und `.git/` werden ignoriert.
+
+### Diary → Schreiben
+
+Neue Diary-Einträge im selben Editor wie eine VL (Study), auch mehrere auf einmal:
+
+```
+Wie war der Tag?
+- gut
+
+Was habe ich gelernt? #review/monthly
+- SQL
+
+14.10.2026
+
+Wie war die Vorlesung?
+- lang
+```
+
+- Jede Frage wird beim **Speichern** eine eigene Notiz im obersten Ordner mit `#life/diary #date/…` von heute. Eine Zeile `TT.MM.JJJJ` (allein, nicht eingerückt) gilt für alle Fragen darunter: Sie bekommen dieses Datum. Text zwischen Datumszeile und nächster Frage ist ein Fehler. Weitere Tags hinter die Frage.
+- **Wiederholen:** Chips „nein · täglich · wöchentlich · monatlich · alle 2/3 Monate · jährlich“ (gemerkt) setzen ein festes Intervall für alle neuen Einträge; eine Frage mit eigenem `#review/…` dahinter behält ihres. Einträge mit Intervall bekommen gleich `#reviewed/` mit ihrem Datum (sonst wären sie sofort fällig).
+- Hier wird nur angelegt (kein Review-Status, nichts wird geändert oder gelöscht). Danach ist der Editor leer; was nicht angelegt werden konnte (z. B. Name gibt es schon), bleibt stehen. Der Text bleibt als Entwurf erhalten, auch wenn die App geschlossen wird.
 
 ### Diary → Taggen
 
@@ -68,6 +89,8 @@ Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.m
   **Eine Frage** ist jede Zeile, die nicht eingerückt ist, mit `?` endet und kein Markdown-Element ist (beginnt nicht mit `-`, `*`, `+`, `1.`, `>`, `#`, `|`, `` ` ``, `!`, `<`, `~` oder `::`); Zeilen in Codeblöcken zählen nie. Alles bis zur nächsten Frage ist ihr Inhalt. Fragen werden lila hinterlegt, Todos orange, Fehler rot – so sieht man beim Tippen sofort, was als Frage gilt.
 
   **Todos:** `!!! Text bis Zeilenende` (am Zeilenanfang, nach einem Listenzeichen oder nach einem Leerzeichen; „Wichtig!!!“ zählt nicht). Erledigt = Zeile löschen. Die Zahl der Ausrufezeichen ist die Priorität: `!!!` normal (orange), `!!!!` wichtig (magenta), `!!!!!` unbedingt schnell (rot, fett). In den Todo-Listen stehen die wichtigsten oben; alle ab „wichtig“ erscheinen zusätzlich auf **Home**.
+
+  **Datumszeile:** Eine Zeile `TT.MM.JJJJ` (allein, nicht eingerückt, violett) beendet die Frage davor; alle Fragen darunter bekommen beim Speichern dieses `#date/…` und gehören danach zu der VL dieses Tages (der Editor lädt die VL danach neu und meldet, wie viele Fragen weggezogen sind). So lassen sich z. B. Fragen nachtragen oder falsch einsortierte verschieben.
 
   **Tags hinter der Frage:** Die Grund-Tags der VL (Stapel-Tag bzw. dessen Untertag und `#date/…`) werden nicht angezeigt. Alle anderen Tags aus der Tag-Zeile einer Notiz stehen hinter ihrer Frage und lassen sich dort ändern, hinzufügen oder löschen (z. B. `#not-for-exam`).
 
@@ -232,6 +255,7 @@ In nicht unterstützten Browsern zeigt die App einen entsprechenden Hinweis.
 - `core.js` – Datenschicht: Vault-Zugriff, Zwischenspeicher (IndexedDB), Abgleich, CRUD (`read`, `create`, `update`, `remove`), Auslesen von Tags/Datum, Events (`change`, `status`).
 - `app.js` – Rahmen: Startseite, Tab-Leiste, gemeinsamer Editor.
 - `features/srs.js` – Review-Logik ohne DOM (Algorithmus, feste Intervalle, `Review.md`); `features/markdown.js` – Markdown-Renderer für die Rückseite.
+- `features/qeditor.js` – gemeinsamer Fragen-Editor (Markierungen, Fehler/Hinweise) für den VL-Editor (Study) und Diary → Schreiben; die Logik dazu (Fragen, Datumszeilen, Speichern planen) in `features/studydoc.js`.
 - `features/home.js` – Startbildschirm (Suche aus `features/search.js`, wichtige Todos); weitere Bereiche als eigene Abschnitte dort.
 - `obsidian-plugin/picker-changelog/` – Obsidian-Plugin, das Änderungen protokolliert (wird nicht von der PWA geladen).
 - `features/*.js` – Feature-Module `{ id, title, mount(root, ui), show() }`, in `app.js` unter `FEATURES` registriert. Module greifen nur über den Core auf Dateien zu.

@@ -1,11 +1,11 @@
 // Feature: Vorlesungen durcharbeiten. Stapel aus Review.md → VLs (Datum) → alle TILs einer VL als ein
 // Fließtext-Dokument („Frage?“-Zeile + Inhalt). Speichern ändert, legt an und verschiebt in den Papierkorb.
 import { h, stableView } from './dom.js';
-import { createEditor } from './editor.js';
+import { createQuestionEditor, createIssues, questionLines } from './qeditor.js';
 import { printVL, exportName, withoutTodos } from './export.js';
 import { CONFIG_PATH, parseDecks, inDeck, isConfig, today, dayToGerman, reviewState, nextReviewState, countStates } from './srs.js';
 import {
-  todos, todoItems, todoStart, todoText, todoPrio, groupByDay, dayOfNote, PRIO_LABEL, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
+  todos, todoItems, todoText, groupByDay, dayOfNote, PRIO_LABEL, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
 } from './studydoc.js';
 
 const DRAFT_PREFIX = 'study-draft:';
@@ -231,8 +231,7 @@ function renderEditor(text) {
     h('div', { class: 'bar-sub ellipsis' }, ed.count, ' · ', shortDay(ed.day)));
   ed.save = h('button', { type: 'button', class: 'btn small', onclick: save }, 'Speichern');
   const pdf = h('button', { type: 'button', class: 'btn small', onclick: exportPDF, title: 'Als PDF exportieren (Drucken → Als PDF speichern)' }, 'PDF');
-  ed.errors = h('div', { class: 'notice err', hidden: true });
-  ed.warnings = h('div', { class: 'notice', hidden: true });
+  ed.issuesBox = createIssues(jumpToLine);
   const host = h('div', { class: 'md-editor', 'aria-label': 'Fragen und Inhalte' });
 
   const info = [h('span', {}, `Neue Fragen: ${ed.folder || '(oberster Ordner)'} · ${ed.tags.map((t) => '#' + t).join(' ')} – weitere Tags hinter die Frage`)];
@@ -249,24 +248,17 @@ function renderEditor(text) {
         'gültige Frage-Zeile). Beim Speichern würden sie aufgeteilt: ' + ed.issues.map((t) => `„${t}“`).join(', ') +
         '. Zeile mit „- “ beginnen oder das „?“ am Ende entfernen.')));
   }
-  parts.push(ed.errors, ed.warnings, host);
+  parts.push(ed.issuesBox.errors, ed.issuesBox.warnings, host);
   editEl.replaceChildren(...parts);
-  ed.cm = createEditor({
+  ed.cm = createQuestionEditor(ui, {
     parent: host,
     doc: text,
-    placeholder: 'Erste Frage?\n- Inhalt …\n\nZweite Frage? #tag\n- …\n!!! Todo bis Zeilenende',
+    placeholder: 'Erste Frage?\n- Inhalt …\n\nZweite Frage? #tag\n- …\n!!! Todo bis Zeilenende\n\nTT.MM.JJJJ (folgende Fragen an diesem Tag)',
     onChange: onInput,
-    decorate: studyMarks,
-    openLink: (target) => ui.openLink(target),
-    saveImage: ui.saveImage,
-    spell: ui.spell,
-    ai: ui.ai,
-    prompt: ui.desktop ? ui.prompts : null, // Eingabefeld beim Markieren nur am Computer
-    tags: ui.tags,
+    questionExtra: stateDot,
     locked: lockedQuestions,
     onLocked: () => lockedHint(),
-    // Bilder relativ zum Ordner der TILs dieser VL auflösen
-    resolveImage: (link) => ui.resolveImage(link, ed.folder ? ed.folder + '/_.md' : '_.md'),
+    folder: () => ed?.folder,
   });
   update();
 }
@@ -277,22 +269,14 @@ function onInput() {
   if (!raf) raf = requestAnimationFrame(() => { raf = 0; update(); });
 }
 
-/** Fehler, Hinweise, Zähler und Speichern-Knopf aktualisieren (Markierungen im Text: studyMarks). */
+/** Fehler, Hinweise, Zähler und Speichern-Knopf aktualisieren (Markierungen im Text: qeditor.js + stateDot). */
 function update() {
   if (!ed || !ed.cm) return;
   const text = ed.cm.value;
-  const { items, errors, warnings } = parseDoc(text);
-  const open = items.filter((it) => stateOf(it.title) === 'open').length;
-  ed.count.textContent = (open ? `${open} offen · ` : '') + plural(items.length, 'Frage', 'Fragen');
-  const list = (title, entries) => [
-    h('strong', {}, title),
-    h('ul', {}, ...entries.sort((a, b) => a.line - b.line).map((e) =>
-      h('li', {}, h('button', { type: 'button', class: 'link', onclick: () => jumpToLine(e.line) }, `Zeile ${e.line + 1}`), ': ' + e.msg))),
-  ];
-  ed.errors.hidden = !errors.length;
-  ed.errors.replaceChildren(...(errors.length ? list('So kann nicht gespeichert werden:', errors) : []));
-  ed.warnings.hidden = !warnings.length;
-  ed.warnings.replaceChildren(...(warnings.length ? list('Hinweis:', warnings) : []));
+  const parsed = parseDoc(text);
+  const open = parsed.items.filter((it) => stateOf(it.title) === 'open').length;
+  ed.count.textContent = (open ? `${open} offen · ` : '') + plural(parsed.items.length, 'Frage', 'Fragen');
+  ed.issuesBox.show(parsed);
   ed.save.disabled = busy || !isDirty();
 }
 
@@ -316,33 +300,13 @@ function cycleState(line) {
   update();
 }
 
-/** Markierungen für den Editor: Fragen, Antwort-Daten, Todos, Fehler- und Hinweis-Zeilen (nicht in Codeblöcken). */
-function studyMarks(text) {
-  const { errors, warnings } = parseDoc(text);
-  const out = [
-    ...errors.map((e) => ({ line: e.line, class: 'cm-err' })),
-    ...warnings.map((w) => ({ line: w.line, class: 'cm-warn' })),
-  ];
-  let fence = null;
-  text.split('\n').forEach((line, i) => {
-    const f = /^\s*(`{3,}|~{3,})/.exec(line);
-    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; return; }
-    if (f) { fence = f[1]; return; }
-    const q = parseQuestion(line);
-    if (q) {
-      out.push({ line: i, from: 0, to: q.tagsAt, class: 'cm-q' });
-      if (ed) {
-        const st = stateOf(q.title);
-        out.push({ line: i, dot: { class: st, title: `Review: ${STATE_LABEL[st]} – antippen zum Ändern, lang drücken bzw. Rechtsklick für mehr`,
-          onClick: cycleState, onMenu: openQuestionMenu } });
-        if (st !== 'open') out.push({ line: i, class: 'cm-q-' + st });
-      }
-      return;
-    }
-    if (/^::\d{2}\.\d{2}\.\d{4}::\s*$/.test(line)) { out.push({ line: i, from: 0, to: line.length, class: 'cm-date' }); return; }
-    const t = todoStart(line);
-    if (t >= 0) out.push({ line: i, from: t, to: line.length, class: 'cm-todo' + (todoPrio(line) > 1 ? ' cm-todo-' + todoPrio(line) : '') });
-  });
+/** Status-Punkt vor einer Frage (und Zeilenfarbe für bereit / nicht abfragen); übrige Markierungen: qeditor.js. */
+function stateDot(q, line) {
+  if (!ed) return [];
+  const st = stateOf(q.title);
+  const out = [{ line, dot: { class: st, title: `Review: ${STATE_LABEL[st]} – antippen zum Ändern, lang drücken bzw. Rechtsklick für mehr`,
+    onClick: cycleState, onMenu: openQuestionMenu } }];
+  if (st !== 'open') out.push({ line, class: 'cm-q-' + st });
   return out;
 }
 
@@ -385,20 +349,6 @@ function leave() {
 }
 
 /* ---------- Fragen: Sperre, Kontextmenü (KI-Aktionen, Umbenennen) ---------- */
-
-/** Frage-Zeilen außerhalb von Codeblöcken: [{ line, title, tagsAt }]. */
-function questionLines(lines) {
-  const out = [];
-  let fence = null;
-  lines.forEach((line, i) => {
-    const f = /^\s*(`{3,}|~{3,})/.exec(line);
-    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; return; }
-    if (f) { fence = f[1]; return; }
-    const q = parseQuestion(line);
-    if (q) out.push({ line: i, title: q.title, tagsAt: q.tagsAt });
-  });
-  return out;
-}
 
 /** Fragen mit Status „bereit“ sind gesperrt (Text bis einschließlich „?“); ändern nur über „Umbenennen“. */
 function lockedQuestions(text) {
@@ -550,7 +500,7 @@ async function save() {
     return false;
   };
   const states = new Map(ed.states);
-  const plan = planSave(text, ed.originals, { folder: ed.folder, base: ed.tags, exists, states, renames: ed.renames });
+  const plan = planSave(text, ed.originals, { folder: ed.folder, base: ed.tags, day: ed.day, exists, states, renames: ed.renames });
   if (plan.errors.length) {
     update();
     ui.toast(plan.errors[0].msg + (plan.errors.length > 1 ? ` (+${plan.errors.length - 1})` : ''), 4000);
@@ -640,7 +590,17 @@ async function save() {
       ed.renames = new Map();
       dropDraft(ed.draftKey);
       ed.issues = [];
-      ui.toast(`Gespeichert ✓ ${summary}`);
+      if (plan.redated.length) {
+        // Fragen mit anderem Datum gehören jetzt zu anderen VLs: VL neu aufbauen
+        ed.originals = loadOriginals(ed.deck, ed.day);
+        ed.base = buildDoc(ed.originals, ed.tags);
+        ed.states = new Map(ed.originals.map((o) => [o.title, reviewState(o.text)]));
+        ed.statesBase = new Map(ed.states);
+        ed.cm.set(ed.base);
+        ui.toast(`Gespeichert ✓ ${summary} – ${plural(plan.redated.length, 'Frage', 'Fragen')} an einem anderen Tag (andere VL)`, 5000);
+      } else {
+        ui.toast(`Gespeichert ✓ ${summary}`);
+      }
     }
   } catch (err) {
     ui.toast('Speichern fehlgeschlagen: ' + err.message, 5000);
