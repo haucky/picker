@@ -154,7 +154,8 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .tab {
   flex: 1;
   border: 0; background: transparent;
-  color: var(--muted); font-weight: 600; font-size: .95rem;
+  color: var(--muted); font-weight: 600; font-size: .88rem; /* sechs Tabs passen auch auf 360 px */
+  min-width: 0; padding: 0 2px;
   border-top: 2px solid transparent;
 }
 .tab.active { color: var(--text); border-top-color: var(--accent); }
@@ -391,6 +392,8 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 /* Study: Fragen, Todos, Antwort-Daten, Fehler/Warnungen */
 .md-editor .cm-q { color: var(--accent); font-weight: 600; }
 .md-editor .cm-todo { color: var(--orange); background: var(--todo-bg); border-radius: 3px; }
+.md-editor .cm-todo-2 { color: var(--magenta); }
+.md-editor .cm-todo-3 { color: var(--red); background: var(--err-bg); font-weight: 600; }
 .md-editor .cm-date { color: var(--magenta); }
 .md-editor .cm-err { background: var(--err-bg); text-decoration: underline wavy var(--red); }
 .md-editor .cm-warn { text-decoration: underline wavy var(--yellow); }
@@ -409,6 +412,13 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 }
 .todo-item:active { background: var(--surface); }
 .todo-text { color: var(--orange); overflow-wrap: anywhere; }
+.todo-text.prio-2 { color: var(--magenta); }
+.todo-text.prio-3 { color: var(--red); font-weight: 600; }
+.prio-tag {
+  display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 8px; border: 1px solid currentColor;
+  font-size: .7rem; font-weight: 600; vertical-align: 1px;
+}
+.home { display: flex; flex-direction: column; gap: 12px; }
 .todo-where { color: var(--muted); font-size: .78rem; overflow-wrap: anywhere; }
 .study-edit .path { margin: 0; overflow-wrap: anywhere; }
 .notice.err { border-color: var(--red); color: var(--red); }

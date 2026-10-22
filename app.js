@@ -1,5 +1,6 @@
 // App-Rahmen: Startseite, Tabs für Feature-Module, gemeinsamer Notiz-Editor.
 import { core } from './core.js';
+import home from './features/home.js';
 import search from './features/search.js';
 import study from './features/study.js';
 import review from './features/review.js';
@@ -14,7 +15,8 @@ import { createTagIndex } from './features/tags.js';
 
 // Neue Feature-Module hier eintragen: { id, title, mount(root, ui), show?(), hide?() }
 // Diary fasst Taggen und Streams zusammen (eigener Umschalter, siehe features/diary.js).
-const FEATURES = [search, study, review, diary, syncTab];
+// Home ist der Startbildschirm: beim Öffnen der App immer zuerst.
+const FEATURES = [home, search, study, review, diary, syncTab];
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -143,7 +145,7 @@ const prompts = createPrompts({ notes: () => core.list() });
 const tags = createTagIndex({ notes: () => core.list() }); // Tag-Vorschläge im Editor (auch auf dem Handy)
 core.on('change', () => tags.invalidate());
 
-const ui = { core, toast, openNote, openLink, resolveImage, saveImage, spell, ai, prompts, tags, desktop, pickVault };
+const ui = { core, toast, openNote, openLink, resolveImage, saveImage, spell, ai, prompts, tags, desktop, pickVault, selectTab };
 
 /* ---------- Editor ---------- */
 
@@ -201,7 +203,6 @@ function selectTab(id) {
   activeTab = f.id;
   for (const [pid, panel] of panels) panel.hidden = pid !== f.id;
   for (const b of el.tabs.children) b.classList.toggle('active', b.dataset.id === f.id);
-  try { localStorage.setItem('tab', f.id); } catch { /* egal */ }
   window.scrollTo(0, 0);
   f.show?.();
 }
@@ -209,9 +210,7 @@ function selectTab(id) {
 function showApp() {
   el.viewStart.hidden = true;
   el.app.hidden = false;
-  let tab = activeTab;
-  try { tab ??= localStorage.getItem('tab'); } catch { /* egal */ }
-  selectTab(tab);
+  selectTab(activeTab ?? home.id); // Start immer auf Home, danach bleibt der gewählte Tab
 }
 
 /* ---------- Init ---------- */

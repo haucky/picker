@@ -4,11 +4,17 @@ import { parseFrontmatter, setFrontmatterFields, splitFrontmatter, parseTags } f
 import { inDeck, isConfig, dayToTagDate, reviewState, setReviewState } from './srs.js';
 
 export const ORDER_FIELD = 'study-order';
-const TODO_RE = /(^|\s)!!!/;
+const TODO_RE = /(^|\s)(!{3,})/;
 const FORBIDDEN_RE = /[\\/:*"<>|?]/;
 const MAX_TITLE = 200;
 
 /* ---------- Todos ---------- */
+
+// Priorität nach Zahl der Ausrufezeichen: !!! normal, !!!! wichtig, !!!!! (oder mehr) unbedingt schnell.
+export const PRIO_NORMAL = 1;
+export const PRIO_IMPORTANT = 2;
+export const PRIO_URGENT = 3;
+export const PRIO_LABEL = { 1: 'Normal', 2: 'Wichtig', 3: 'Unbedingt schnell' };
 
 /** Spalte, ab der eine Zeile ein Todo ist (`!!!` am Zeilenanfang oder nach Leerraum), sonst -1. */
 export function todoStart(line) {
@@ -16,15 +22,26 @@ export function todoStart(line) {
   return m ? m.index + m[1].length : -1;
 }
 
-/** Text eines Todos (alles nach `!!!` bis Zeilenende) oder null. */
+/** Priorität eines Todos (1–3, siehe oben) oder 0, wenn die Zeile kein Todo ist. */
+export function todoPrio(line) {
+  const m = TODO_RE.exec(line);
+  return m ? Math.min(PRIO_URGENT, m[2].length - 2) : 0;
+}
+
+/** Text eines Todos (alles nach den Ausrufezeichen bis Zeilenende) oder null. */
 export function todoText(line) {
-  const t = todoStart(line);
-  return t < 0 ? null : line.slice(t + 3).trim();
+  const m = TODO_RE.exec(line);
+  return m ? line.slice(m.index + m[0].length).trim() : null;
 }
 
 /** Offene Todos (`!!! Text bis Zeilenende`) einer Notiz als Texte. */
 export function todos(text) {
   return text.split(/\r?\n/).map(todoText).filter((t) => t != null);
+}
+
+/** Offene Todos einer Notiz mit Priorität: [{ text, prio }]. */
+export function todoItems(text) {
+  return text.split(/\r?\n/).map((l) => ({ text: todoText(l), prio: todoPrio(l) })).filter((t) => t.text != null);
 }
 
 /* ---------- Notizen ---------- */

@@ -3,9 +3,9 @@
 import { h, stableView } from './dom.js';
 import { createEditor } from './editor.js';
 import { printVL, exportName, withoutTodos } from './export.js';
-import { CONFIG_PATH, parseDecks, isConfig, today, dayToGerman, reviewState, nextReviewState, countStates } from './srs.js';
+import { CONFIG_PATH, parseDecks, inDeck, isConfig, today, dayToGerman, reviewState, nextReviewState, countStates } from './srs.js';
 import {
-  todos, todoStart, todoText, groupByDay, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
+  todos, todoItems, todoStart, todoText, todoPrio, groupByDay, dayOfNote, PRIO_LABEL, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
 } from './studydoc.js';
 
 const DRAFT_PREFIX = 'study-draft:';
@@ -126,13 +126,14 @@ function renderDeck(deck, notes) {
 
   const open = [];
   for (const g of groups) {
-    for (const n of g.notes) for (const t of todos(n.text)) open.push({ g, n, t });
+    for (const n of g.notes) for (const { text: t, prio } of todoItems(n.text)) open.push({ g, n, t, prio });
   }
+  open.sort((a, b) => b.prio - a.prio); // wichtigste zuerst, sonst wie bisher (stabil)
   if (open.length) {
     children.push(h('h2', { class: 'section' }, `Offene Todos (${open.length})`),
-      h('ul', { class: 'todo-list' }, ...open.map(({ g, n, t }) => h('li', {},
+      h('ul', { class: 'todo-list' }, ...open.map(({ g, n, t, prio }) => h('li', {},
         h('button', { type: 'button', class: 'todo-item', onclick: (e) => openVL(deck, g.day, { title: n.title, todo: t }, e.currentTarget) },
-          h('span', { class: 'todo-text' }, t || '(ohne Text)'),
+          h('span', { class: 'todo-text prio-' + prio }, prio > 1 ? h('span', { class: 'prio-tag' }, PRIO_LABEL[prio]) : null, t || '(ohne Text)'),
           h('span', { class: 'todo-where' }, `${dayLabel(g.day)} · ${n.title}?`))))));
   }
 
@@ -340,7 +341,7 @@ function studyMarks(text) {
     }
     if (/^::\d{2}\.\d{2}\.\d{4}::\s*$/.test(line)) { out.push({ line: i, from: 0, to: line.length, class: 'cm-date' }); return; }
     const t = todoStart(line);
-    if (t >= 0) out.push({ line: i, from: t, to: line.length, class: 'cm-todo' });
+    if (t >= 0) out.push({ line: i, from: t, to: line.length, class: 'cm-todo' + (todoPrio(line) > 1 ? ' cm-todo-' + todoPrio(line) : '') });
   });
   return out;
 }
@@ -694,5 +695,20 @@ export default {
 
   show() {
     if (ed) update(); else renderList();
+  },
+
+  /**
+   * Springt zu einem Todo (z. B. aus Home): öffnet die VL der Notiz im Study-Editor an der Stelle des Todos.
+   * Gehört die Notiz zu keinem Stapel, öffnet sie sich im normalen Editor. Der Tab muss schon gewählt sein.
+   */
+  openTodo(path, todo) {
+    const n = core.get(path);
+    if (!n) { ui.toast('Notiz gibt es nicht mehr.'); return; }
+    if (ed) { ui.toast('Erst die offene VL schließen.', 3000); return; }
+    const ds = decks();
+    const i = ds.findIndex((d) => inDeck(n, d));
+    if (i < 0) { ui.openNote(path); return; }
+    if (deckIndex !== i) openDeck(i);
+    openVL(ds[i], dayOfNote(n), { title: n.title, todo });
   },
 };

@@ -13,7 +13,7 @@ Minimale PWA, um auf dem Android-Handy einen lokalen Obsidian-Vault schnell zu d
 ## Benutzung
 
 - **Vault öffnen** tippen und im Ordner-Dialog **nur den Vault-Ordner** auswählen (den Ordner, der `.obsidian/` enthält) – nicht „Interner Speicher“, „Documents“ o. Ä. Die App bekommt Lese- *und Schreib*zugriff auf genau diesen Ordner samt Unterordnern; gib ihr nicht mehr als nötig.
-Unten wechselst du zwischen den Modulen **Suche**, **Study**, **Review**, **Diary** (darin **Taggen** und **Streams**) und **Settings**.
+Unten wechselst du zwischen den Modulen **Home**, **Suche**, **Study**, **Review**, **Diary** (darin **Taggen** und **Streams**) und **Settings**. Beim Öffnen der App startet sie immer auf **Home**.
 
 ### Suche
 
@@ -66,7 +66,7 @@ Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.m
 
   **Eine Frage** ist jede Zeile, die nicht eingerückt ist, mit `?` endet und kein Markdown-Element ist (beginnt nicht mit `-`, `*`, `+`, `1.`, `>`, `#`, `|`, `` ` ``, `!`, `<`, `~` oder `::`); Zeilen in Codeblöcken zählen nie. Alles bis zur nächsten Frage ist ihr Inhalt. Fragen werden lila hinterlegt, Todos orange, Fehler rot – so sieht man beim Tippen sofort, was als Frage gilt.
 
-  **Todos:** `!!! Text bis Zeilenende` (am Zeilenanfang, nach einem Listenzeichen oder nach einem Leerzeichen; „Wichtig!!!“ zählt nicht). Erledigt = Zeile löschen.
+  **Todos:** `!!! Text bis Zeilenende` (am Zeilenanfang, nach einem Listenzeichen oder nach einem Leerzeichen; „Wichtig!!!“ zählt nicht). Erledigt = Zeile löschen. Die Zahl der Ausrufezeichen ist die Priorität: `!!!` normal (orange), `!!!!` wichtig (magenta), `!!!!!` unbedingt schnell (rot, fett). In den Todo-Listen stehen die wichtigsten oben; alle ab „wichtig“ erscheinen zusätzlich auf **Home**.
 
   **Tags hinter der Frage:** Die Grund-Tags der VL (Stapel-Tag bzw. dessen Untertag und `#date/…`) werden nicht angezeigt. Alle anderen Tags aus der Tag-Zeile einer Notiz stehen hinter ihrer Frage und lassen sich dort ändern, hinzufügen oder löschen (z. B. `#not-for-exam`).
 
@@ -88,6 +88,12 @@ Fragen mit Status *bereit* sind gegen versehentliches Ändern gesperrt (der Text
   Eine direkt im Text umformulierte Frage ist also eine neue Notiz (der SR-Stand der alten geht verloren) – zum Umformulieren mit Lernstand **Umbenennen** im Menü an der Frage nehmen. Die Reihenfolge im Text wird als `study-order` in der Frontmatter gespeichert. Wurden Dateien seit dem Öffnen außerhalb geändert (z. B. per Obsidian Sync), fragt die App vor dem Überschreiben. Ungespeicherter Text bleibt als Entwurf im Browser erhalten und wird beim nächsten Öffnen der VL wiederhergestellt.
 - Nicht erlaubt (Speichern wird verhindert): Text vor der ersten Frage, doppelte Fragen, Zeichen, die in Dateinamen verboten sind (`\ / : * " < > |` und `?` mitten in der Frage), Fragen, deren Datei es woanders im Vault schon gibt.
 - **PDF** (im VL-Editor oben) exportiert die VL so, wie sie gerade im Editor steht, als schlichtes Dokument im LaTeX-Stil (Schrift Latin Modern, A4) – z. B. um sie anderen Studis zu geben. Es öffnet sich der Druckdialog, dort **Als PDF speichern** wählen. Oben stehen Stapel-Name, dein Name (aus **Settings**) und das Datum der VL, darunter jede Frage nummeriert mit ihrem Inhalt und Bildern (`small` = drei nebeneinander, `normal` ≈ ¾ Seitenbreite, `big` = volle Breite). Eigene Antworten stehen mit drin („Antwort vom …“). Todos (`!!!`) und die Tags hinter den Fragen lässt der Export weg.
+
+### Home
+
+Startbildschirm, beim Öffnen der App immer zuerst. Bisher:
+
+- **Wichtige Todos:** alle Todos mit `!!!!` (wichtig) und `!!!!!` (unbedingt schnell) aus dem ganzen Vault, die dringendsten oben, darunter die älteste Notiz zuerst. Darunter steht, wo das Todo steht (Stapel · Datum · Frage). Antippen öffnet die VL im Study-Editor an der Stelle des Todos; gehört die Notiz zu keinem Stapel, öffnet sie sich im normalen Editor. Normale Todos (`!!!`) stehen weiter nur im Study-Tab.
 
 ### Review
 
@@ -220,6 +226,7 @@ In nicht unterstützten Browsern zeigt die App einen entsprechenden Hinweis.
 - `core.js` – Datenschicht: Vault-Zugriff, Zwischenspeicher (IndexedDB), Abgleich, CRUD (`read`, `create`, `update`, `remove`), Auslesen von Tags/Datum, Events (`change`, `status`).
 - `app.js` – Rahmen: Startseite, Tab-Leiste, gemeinsamer Editor.
 - `features/srs.js` – Review-Logik ohne DOM (Algorithmus, feste Intervalle, `Review.md`); `features/markdown.js` – Markdown-Renderer für die Rückseite.
+- `features/home.js` – Startbildschirm (wichtige Todos); weitere Bereiche als eigene Abschnitte dort.
 - `obsidian-plugin/picker-changelog/` – Obsidian-Plugin, das Änderungen protokolliert (wird nicht von der PWA geladen).
 - `features/*.js` – Feature-Module `{ id, title, mount(root, ui), show() }`, in `app.js` unter `FEATURES` registriert. Module greifen nur über den Core auf Dateien zu.
 
