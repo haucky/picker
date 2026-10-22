@@ -267,6 +267,19 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .review-overview .link { align-self: flex-start; }
 .bar .count { color: var(--muted); font-size: .85rem; padding-right: 4px; white-space: nowrap; }
 .card-badge { color: var(--muted); font-size: .85rem; text-align: center; margin-top: 8px; }
+.interval-chip {
+  border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 14px;
+  padding: 2px 10px; min-height: 28px; font: inherit;
+}
+.interval-chip.on { border-color: var(--accent); color: var(--accent); }
+.interval-picker { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.interval-picker .picks { justify-content: center; }
+.interval-custom { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; font-size: .9rem; }
+.interval-num, .interval-unit {
+  min-height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  font: inherit; padding: 0 8px;
+}
+.interval-num { width: 4.5em; }
 .card-front {
   display: block; width: 100%; border: 0; background: transparent; padding: 8px 0 0;
   font-size: 1.5rem; font-weight: 600; text-align: center; line-height: 1.3; overflow-wrap: anywhere;

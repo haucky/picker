@@ -1,16 +1,23 @@
 // Feature: Notizen wiederholen – Spaced Repetition (Stapel aus Review.md, Stand in der Frontmatter wie beim
-// Obsidian-Plugin) und feste Intervalle (#review/daily|weekly|monthly). Vorderseite = Dateiname, Rückseite = Inhalt.
+// Obsidian-Plugin) und feste Intervalle (#review/weekly, #review/3m, …). Vorderseite = Dateiname, Rückseite = Inhalt.
+import { parseTags } from '../core.js';
 import { h, stableView } from './dom.js';
 import { renderMarkdown } from './markdown.js';
 import {
   CONFIG_PATH, RESPONSES, parseDecks, buildCards, srState, nextState, writeState, dueDateCounts,
-  formatInterval, setReviewed, seedDay, splitAnswers, appendAnswer, cardBody, today, isConfig, FIXED_INTERVALS,
-  setReviewState,
+  formatInterval, setReviewed, seedDay, splitAnswers, appendAnswer, cardBody, today, isConfig,
+  setReviewState, fixedInterval, reviewedDay, fixedDue, fixedNext, setFixedInterval, doneOptions, markDone,
+  formatFixed, formatIntervalShort, sameInterval, intervalTag, dayToGerman,
 } from './srs.js';
 import { studyOrder } from './studydoc.js';
 
 const RESPONSE_LABEL = { hard: 'Schwer', good: 'Gut', easy: 'Leicht' };
-const FIXED_LABEL = { daily: 'täglich', weekly: 'wöchentlich', monthly: 'monatlich' };
+const DONE_LABEL = { sooner: 'Früher wieder', done: '✅ Erledigt', later: 'Später wieder' };
+const DONE_CLASS = { sooner: 'hard', done: 'good', later: 'easy' };
+const DONE_KEYS = ['sooner', 'done', 'later'];
+const INTERVAL_PRESETS = [[1, 'd'], [1, 'w'], [2, 'w'], [1, 'm'], [2, 'm'], [3, 'm'], [6, 'm'], [1, 'y'], [2, 'y']]
+  .map(([n, unit]) => ({ n, unit }));
+const UNIT_NAMES = { d: 'Tage', w: 'Wochen', m: 'Monate', y: 'Jahre' };
 const ALL = 'all';
 const FIXED = 'fixed';
 
@@ -18,8 +25,8 @@ const CONFIG_TEMPLATE = `# Review
 
 Jede Überschrift ist ein Stapel. Eine Notiz gehört dazu, wenn sie den Tag hinter „tag:“ hat
 (Untertags zählen mit). Abgefragt werden nur Fragen mit Review-Status „bereit“ (im Study-Editor über den
-Punkt vor der Frage setzen). Notizen mit festem Intervall (review/daily, weekly, monthly) werden nur nach
-ihrem festen Intervall wiederholt.
+Punkt vor der Frage setzen). Notizen mit festem Intervall (review/daily, weekly, monthly, yearly oder z. B.
+review/2w, review/3m, review/1y) werden nur nach ihrem festen Intervall wiederholt.
 
 ## Datenbanken WS26
 - tag: #uni/dbs
@@ -83,7 +90,7 @@ function renderOverview() {
   const fixedCount = cards.filter((c) => c.kind === 'fixed').length;
   entries.push({ key: ALL, title: 'Alle' });
   ds.forEach((d, i) => entries.push({ key: i, title: d.name, sub: '#' + d.tag }));
-  if (fixedCount) entries.push({ key: FIXED, title: 'Feste Intervalle', sub: '#review/daily · weekly · monthly' });
+  if (fixedCount) entries.push({ key: FIXED, title: 'Feste Intervalle', sub: '#review/weekly · 3m · 1y …' });
 
   children.push(h('ul', { class: 'decks' }, ...entries.map((e) => {
     const cs = cardsFor(e.key, cards);
@@ -144,7 +151,7 @@ async function seed(cards) {
   let ok = 0;
   for (const c of cards) {
     try {
-      await core.update(c.path, (text) => setReviewed(text, seedDay(c.fixedType, day)));
+      await core.update(c.path, (text) => setReviewed(text, seedDay(c.interval, day)));
       ok++;
     } catch (err) {
       ui.toast(`${c.path}: ${err.message}`, 4000);
@@ -161,7 +168,7 @@ function startSession(key, title) {
   const cards = cardsFor(key, buildCards(core.list(), decks(), today()));
   const queue = queueOf(cards);
   if (!queue.length) return;
-  session = { key, title, queue, index: 0, revealed: false, answering: false, history: [], rated: 0 };
+  session = { key, title, queue, index: 0, revealed: false, answering: false, editingInterval: false, history: [], rated: 0 };
   overviewEl.hidden = true;
   sessionEl.hidden = false;
   history.pushState({ review: true }, '');
@@ -190,14 +197,47 @@ function clearUrls() {
 
 const current = () => session && session.queue[session.index];
 
+const overdueText = (days) => `🔥 ${days} Tag${days === 1 ? '' : 'e'} überfällig`;
+
 function badge(card) {
   if (card.kind === 'fixed') {
-    const what = '📅 ' + FIXED_LABEL[card.fixedType];
-    if (card.unseeded) return what + ' · noch nie';
-    return what + (card.overdue > 0 ? ` · 🔥 ${card.overdue} Tag${card.overdue === 1 ? '' : 'e'} überfällig` : ' · heute fällig');
+    let status;
+    if (card.unseeded) status = 'noch nie';
+    else if (card.overdue > 0) status = overdueText(card.overdue);
+    else if (card.overdue === 0) status = 'heute fällig';
+    else status = `fällig am ${dayToGerman(card.due)}`; // nach einer Intervall-Änderung in der Sitzung
+    return h('div', { class: 'card-badge' },
+      h('button', {
+        type: 'button', class: 'interval-chip' + (session.editingInterval ? ' on' : ''),
+        'aria-expanded': String(session.editingInterval), title: 'Intervall ändern',
+        onclick: () => { session.editingInterval = !session.editingInterval; renderCard(); },
+      }, `📅 ${formatFixed(card.interval)} ✎`),
+      ' · ' + status);
   }
-  if (card.isNew) return '✨ neu';
-  return card.overdue > 0 ? `🔥 ${card.overdue} Tag${card.overdue === 1 ? '' : 'e'} überfällig` : '🔔 heute fällig';
+  const text = card.isNew ? '✨ neu' : card.overdue > 0 ? overdueText(card.overdue) : '🔔 heute fällig';
+  return h('div', { class: 'card-badge' }, text);
+}
+
+/** Auswahl für das feste Intervall: häufige Werte als Chips, dazu Zahl + Einheit frei. */
+function intervalPicker(card) {
+  const num = h('input', {
+    type: 'number', min: 1, max: 999, value: card.interval.n, class: 'interval-num', 'aria-label': 'Anzahl',
+  });
+  const unit = h('select', { class: 'interval-unit', 'aria-label': 'Einheit' },
+    ...Object.entries(UNIT_NAMES).map(([u, name]) => h('option', { value: u, selected: u === card.interval.unit }, name)));
+  const custom = () => {
+    const n = Math.round(+num.value);
+    if (!(n >= 1 && n <= 999)) { ui.toast('Bitte eine Zahl von 1 bis 999.'); return; }
+    changeInterval({ n, unit: unit.value });
+  };
+  num.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); custom(); } });
+  return h('div', { class: 'interval-picker' },
+    h('div', { class: 'picks' }, ...INTERVAL_PRESETS.map((iv) => h('button', {
+      type: 'button', class: 'chip' + (sameInterval(iv, card.interval) ? ' on' : ''),
+      title: '#review/' + intervalTag(iv), onclick: () => changeInterval(iv),
+    }, formatIntervalShort(iv)))),
+    h('div', { class: 'interval-custom' }, 'alle', num, unit,
+      h('button', { type: 'button', class: 'btn small', onclick: custom }, 'Setzen')));
 }
 
 function mdContext(path) {
@@ -250,9 +290,10 @@ function renderCard() {
   const { back, answers, count } = splitAnswers(cardBody(note.text));
   const parts = [
     header,
-    h('div', { class: 'card-badge' }, badge(card)),
+    badge(card),
     h('button', { type: 'button', class: 'card-front', onclick: () => ui.openNote(note.path) }, note.title + '?'),
   ];
+  if (card.kind === 'fixed' && session.editingInterval) parts.splice(2, 0, intervalPicker(card));
   if (note.path.includes('/')) parts.push(h('div', { class: 'card-path' }, note.path.slice(0, note.path.lastIndexOf('/'))));
 
   if (session.answering) parts.push(answerBox(note));
@@ -295,12 +336,12 @@ function answerBox(note) {
 }
 
 function ratingRow(card, note) {
-  if (card.kind === 'fixed') {
-    return h('div', { class: 'ratings' },
-      h('button', { type: 'button', class: 'rate good', onclick: () => rate('done') },
-        '✅ Erledigt', h('small', {}, `wieder in ${FIXED_INTERVALS[card.fixedType]} T`)));
-  }
   const day = today();
+  if (card.kind === 'fixed') {
+    return h('div', { class: 'ratings' }, ...doneOptions(card.interval, day).map((o) =>
+      h('button', { type: 'button', class: 'rate ' + DONE_CLASS[o.key], onclick: () => rate(o.key) },
+        DONE_LABEL[o.key], h('small', { title: dayToGerman(o.due) }, doneIn(o, card.interval, day)))));
+  }
   const st = srState(note.text);
   const dd = dueDateCounts(core.list(), day, note.path);
   return h('div', { class: 'ratings' }, ...RESPONSES.map((r) => {
@@ -308,6 +349,14 @@ function ratingRow(card, note) {
     return h('button', { type: 'button', class: 'rate ' + r, onclick: () => rate(r) },
       RESPONSE_LABEL[r], h('small', {}, formatInterval(next.due - day)));
   }));
+}
+
+/** „in 3 Monaten“ (normal/später, nach dem Kalender) bzw. „in 46 T“ (früher, halber Abstand in Tagen). */
+function doneIn(opt, iv, day) {
+  if (opt.key === 'sooner') return 'in ' + formatInterval(opt.due - day);
+  const n = iv.n * (opt.key === 'later' ? 2 : 1);
+  const unit = (n === 1 ? { d: 'Tag', w: 'Woche', m: 'Monat', y: 'Jahr' } : { d: 'Tagen', w: 'Wochen', m: 'Monaten', y: 'Jahren' })[iv.unit];
+  return `in ${n} ${unit}`;
 }
 
 function actions(card) {
@@ -329,6 +378,7 @@ function advance() {
   session.index++;
   session.revealed = false;
   session.answering = false;
+  session.editingInterval = false;
   window.scrollTo(0, 0);
   renderCard();
 }
@@ -348,7 +398,10 @@ async function rate(response) {
     await core.update(card.path, (text) => {
       before = text;
       if (card.kind === 'fixed') {
-        after = setReviewed(text, day);
+        // Intervall aus der aktuellen Datei (kann inzwischen im Editor geändert worden sein)
+        const iv = fixedInterval(parseTags(text)) || card.interval;
+        const opt = doneOptions(iv, day).find((o) => o.key === response) || doneOptions(iv, day).find((o) => o.key === 'done');
+        after = markDone(text, iv, day, opt.due);
       } else {
         const dd = dueDateCounts(core.list(), day, card.path);
         after = writeState(text, nextState(srState(text), response, day, dd));
@@ -358,6 +411,40 @@ async function rate(response) {
     session.history.push({ path: card.path, index: session.index, before, after, rated: true });
     session.rated++;
     advance();
+  } catch (err) {
+    ui.toast('Speichern fehlgeschlagen: ' + err.message, 5000);
+  } finally {
+    busy = false;
+  }
+}
+
+/** Fälligkeit einer Karte mit festem Intervall aus dem (neuen) Text. */
+function refreshFixed(card, text) {
+  const tags = parseTags(text);
+  const iv = fixedInterval(tags);
+  if (!iv) return;
+  const day = today();
+  const last = reviewedDay(tags);
+  card.interval = iv;
+  card.due = fixedDue(text, iv, last, day);
+  card.overdue = day - card.due;
+  card.unseeded = last == null && fixedNext(text) == null;
+}
+
+/** Festes Intervall der aktuellen Karte ändern (#review/…-Tag); Rückgängig wie bei einer Bewertung. */
+async function changeInterval(iv) {
+  const card = current();
+  if (!card || card.kind !== 'fixed' || busy) return;
+  if (sameInterval(iv, card.interval)) { session.editingInterval = false; renderCard(); return; }
+  busy = true;
+  let before, after;
+  try {
+    await core.update(card.path, (text) => { before = text; after = setFixedInterval(text, iv); return after; });
+    session.history.push({ path: card.path, index: session.index, before, after, rated: false, revealed: session.revealed });
+    refreshFixed(card, after);
+    session.editingInterval = false;
+    ui.toast(`Intervall: ${formatFixed(iv)}`);
+    renderCard();
   } catch (err) {
     ui.toast('Speichern fehlgeschlagen: ' + err.message, 5000);
   } finally {
@@ -399,8 +486,11 @@ async function undo() {
     } else {
       if (last.rated) session.rated--;
       session.index = last.index;
-      session.revealed = last.rated;
+      session.revealed = last.revealed ?? last.rated;
       session.answering = false;
+      session.editingInterval = false;
+      const card = current();
+      if (card && card.kind === 'fixed') refreshFixed(card, last.before);
       renderCard();
     }
   } catch (err) {
@@ -435,7 +525,11 @@ export default {
       if (root.hidden) return;
       if (session) {
         const card = current();
-        if (card && (ev.paths || []).includes(card.path) && !busy && !session.answering) renderCard();
+        if (card && (ev.paths || []).includes(card.path) && !busy && !session.answering) {
+          const note = core.get(card.path);
+          if (note && card.kind === 'fixed') refreshFixed(card, note.text); // z. B. Intervall im Editor geändert
+          renderCard();
+        }
         return;
       }
       if (!queued) {
@@ -444,10 +538,11 @@ export default {
       }
     });
 
-    // Tastatur (Laptop): Leertaste = zeigen, 1/2/3 = Schwer/Gut/Leicht, Enter = Erledigt, u = rückgängig
+    // Tastatur (Laptop): Leertaste = zeigen, 1/2/3 = Schwer/Gut/Leicht bzw. früher/erledigt/später, Enter = Erledigt,
+    // u = rückgängig
     document.addEventListener('keydown', (e) => {
       if (!session || root.hidden || sessionEl.hidden || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName)) return;
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) return;
       if (!document.getElementById('view-editor').hidden) return;
       const card = current();
       if (!card) return;
@@ -455,6 +550,7 @@ export default {
       if (e.key === 'u') { undo(); return; }
       if (!session.revealed) return;
       if (card.kind === 'fixed' && e.key === 'Enter') { e.preventDefault(); rate('done'); }
+      if (card.kind === 'fixed' && /^[123]$/.test(e.key)) rate(DONE_KEYS[+e.key - 1]);
       if (card.kind === 'sr' && /^[123]$/.test(e.key)) rate(RESPONSES[+e.key - 1]);
     });
   },
