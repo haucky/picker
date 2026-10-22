@@ -131,6 +131,11 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 #app .home-panel .q { min-height: 44px; font-size: 1rem; }
 .home-panel .home { flex: 1; }
 .home-panel .section.first { margin-top: 4px; }
+.pin-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pin-card.due { border-color: var(--accent); }
+.pin-meta { color: var(--muted); font-size: .8rem; }
+.pin-details > summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+.pin-details.sub > summary { font-weight: 400; color: var(--muted); font-size: .85rem; }
 .link {
   border: 0; background: transparent; color: var(--muted); text-decoration: underline;
   min-height: 40px; padding: 0;
