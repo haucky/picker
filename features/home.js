@@ -1,12 +1,14 @@
-// Tab Home: Startbildschirm. Bisher: Liste der wichtigen Todos (!!!! wichtig, !!!!! unbedingt schnell) aus allen
+// Tab Home: Startbildschirm. Oben die Suche (features/search.js; während gesucht wird, nur die Treffer), darunter
+// die Liste der wichtigen Todos (!!!! wichtig, !!!!! unbedingt schnell) aus allen
 // Notizen; antippen springt im Study-Editor zur Stelle (bzw. öffnet die Notiz, wenn sie zu keinem Stapel gehört).
 // Weitere Bereiche kommen als eigene Abschnitte dazu.
 import { h, stableView } from './dom.js';
 import { todoItems, dayOfNote, PRIO_IMPORTANT, PRIO_LABEL } from './studydoc.js';
 import { parseDecks, inDeck, isConfig, dayToGerman } from './srs.js';
 import study from './study.js';
+import { createSearch } from './search.js';
 
-let ui, core, root, view;
+let ui, core, root, view, search, content;
 
 /** Todos ab „wichtig“ aus allen Notizen: dringendste zuerst, dann älteste Notiz zuerst. */
 function importantTodos() {
@@ -36,7 +38,7 @@ function open(item) {
 }
 
 function render() {
-  const children = [h('header', { class: 'bar' }, h('h1', {}, 'Home'))];
+  const children = [];
   if (!core.notes.size) {
     children.push(h('p', { class: 'hint left' }, core.syncing ? 'Index wird aufgebaut …' : 'Keine Notizen.'));
     view.show(children);
@@ -44,7 +46,7 @@ function render() {
   }
 
   const items = importantTodos();
-  children.push(h('h2', { class: 'section' }, items.length ? `Wichtige Todos (${items.length})` : 'Wichtige Todos'));
+  children.push(h('h2', { class: 'section first' }, items.length ? `Wichtige Todos (${items.length})` : 'Wichtige Todos'));
   if (!items.length) {
     children.push(h('p', { class: 'hint left' }, 'Nichts Dringendes 🎉 – wichtige Todos mit !!!!, ganz dringende mit !!!!!.'));
   } else {
@@ -64,17 +66,23 @@ export default {
     root = _root;
     ui = _ui;
     core = ui.core;
-    const el = h('div', { class: 'home' });
-    view = stableView(el);
-    root.append(el);
+    content = h('div', { class: 'home' });
+    view = stableView(content);
+    search = createSearch(ui, { onQuery: (active) => { content.hidden = active; search.hits.hidden = !active; } });
+    search.hits.hidden = true;
+    root.classList.add('home-panel');
+    root.append(search.bar, search.hits, content, search.footer);
 
     let queued = false;
     core.on('change', () => {
-      if (root.hidden || queued) return;
+      if (root.hidden || queued || content.hidden) return;
       queued = true;
       requestAnimationFrame(() => { queued = false; view.request(render); });
     });
   },
 
-  show() { render(); },
+  show() {
+    search.refresh();
+    if (!content.hidden) render();
+  },
 };

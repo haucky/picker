@@ -1,4 +1,4 @@
-// Feature: Volltextsuche über Dateinamen und Inhalt.
+// Volltextsuche über Dateinamen und Inhalt – steht oben im Tab Home (createSearch), dazu Status und „Vault wechseln“.
 import { h, highlighted, escapeRe } from './dom.js';
 
 const MAX_HITS = 50;
@@ -6,7 +6,7 @@ const SNIPPET_BEFORE = 40;
 const SNIPPET_LEN = 160;
 
 let ui, core;
-let q, hits, status, btnPermission;
+let q, hits;
 
 function search() {
   const terms = q.value.toLowerCase().split(/\s+/).filter(Boolean);
@@ -59,49 +59,54 @@ function hitItem(n, terms, re) {
   return h('li', {}, btn);
 }
 
-export default {
-  id: 'search',
-  title: 'Suche',
+/**
+ * Suchleiste, Trefferliste und Statuszeile (Abgleich, „Zugriff erlauben“, „Vault wechseln“) für Home.
+ * `onQuery(active)` meldet, ob gerade gesucht wird (dann blendet Home seinen übrigen Inhalt aus).
+ * Gibt { bar, hits, footer, refresh } zurück.
+ */
+export function createSearch(_ui, { onQuery = () => {} } = {}) {
+  ui = _ui;
+  core = ui.core;
+  q = h('input', {
+    type: 'search', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
+    enterkeyhint: 'search', placeholder: 'Suchen …', 'aria-label': 'Suchen', class: 'q',
+  });
+  hits = h('ol', { class: 'hits' });
+  const status = h('span', { class: 'status-text' });
+  const btnPermission = h('button', { type: 'button', class: 'link accent', hidden: true,
+    onclick: () => core.hasPermission(true) }, 'Zugriff erlauben');
 
-  mount(root, _ui) {
-    ui = _ui;
-    core = ui.core;
-    q = h('input', {
-      type: 'search', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false',
-      enterkeyhint: 'search', placeholder: 'Suchen …', 'aria-label': 'Suchen', class: 'q',
-    });
-    hits = h('ol', { class: 'hits' });
-    status = h('span', { class: 'status-text' });
-    btnPermission = h('button', { type: 'button', class: 'link accent', hidden: true,
-      onclick: () => core.hasPermission(true) }, 'Zugriff erlauben');
-    root.append(
-      h('div', { class: 'search' }, q),
-      hits,
-      h('footer', { class: 'status' }, status, btnPermission,
-        h('button', { type: 'button', class: 'link', onclick: ui.pickVault }, 'Vault wechseln')),
-    );
-
-    let timer;
-    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 80); });
-    q.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') hits.querySelector('.hit')?.click();
-    });
-
-    let pending = false;
-    core.on('change', () => {
-      if (pending || !q.value.trim()) return;
-      pending = true;
-      requestAnimationFrame(() => { pending = false; search(); });
-    });
-    core.on('status', (s) => {
-      status.textContent = s.text;
-      btnPermission.hidden = !s.needsPermission;
-    });
-    status.textContent = core.statusText;
-  },
-
-  show() {
+  let active = false;
+  const run = () => {
     search();
-    q.focus();
-  },
-};
+    const now = !!q.value.trim();
+    if (now !== active) { active = now; onQuery(active); }
+  };
+
+  let timer;
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(run, 80); });
+  q.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') hits.querySelector('.hit')?.click();
+    if (e.key === 'Escape' && q.value) { q.value = ''; run(); }
+  });
+
+  let pending = false;
+  core.on('change', () => {
+    if (pending || !q.value.trim()) return;
+    pending = true;
+    requestAnimationFrame(() => { pending = false; search(); });
+  });
+  core.on('status', (st) => {
+    status.textContent = st.text;
+    btnPermission.hidden = !st.needsPermission;
+  });
+  status.textContent = core.statusText;
+
+  return {
+    bar: h('div', { class: 'search' }, q),
+    hits,
+    footer: h('footer', { class: 'status' }, status, btnPermission,
+      h('button', { type: 'button', class: 'link', onclick: ui.pickVault }, 'Vault wechseln')),
+    refresh: run,
+  };
+}

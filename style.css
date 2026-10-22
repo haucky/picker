@@ -126,6 +126,11 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
   color: var(--muted); font-size: .8rem; padding-top: 16px;
 }
 .status .status-text { flex: 1; min-width: 50%; }
+/* Home: Suche dezent oben, Status unten */
+.home-panel .search { padding: 4px 0 8px; }
+#app .home-panel .q { min-height: 44px; font-size: 1rem; }
+.home-panel .home { flex: 1; }
+.home-panel .section.first { margin-top: 4px; }
 .link {
   border: 0; background: transparent; color: var(--muted); text-decoration: underline;
   min-height: 40px; padding: 0;
@@ -154,7 +159,7 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .tab {
   flex: 1;
   border: 0; background: transparent;
-  color: var(--muted); font-weight: 600; font-size: .88rem; /* sechs Tabs passen auch auf 360 px */
+  color: var(--muted); font-weight: 600; font-size: .95rem;
   min-width: 0; padding: 0 2px;
   border-top: 2px solid transparent;
 }

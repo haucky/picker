@@ -1,7 +1,6 @@
 // App-Rahmen: Startseite, Tabs für Feature-Module, gemeinsamer Notiz-Editor.
 import { core } from './core.js';
 import home from './features/home.js';
-import search from './features/search.js';
 import study from './features/study.js';
 import review from './features/review.js';
 import diary from './features/diary.js';
@@ -15,8 +14,8 @@ import { createTagIndex } from './features/tags.js';
 
 // Neue Feature-Module hier eintragen: { id, title, mount(root, ui), show?(), hide?() }
 // Diary fasst Taggen und Streams zusammen (eigener Umschalter, siehe features/diary.js).
-// Home ist der Startbildschirm: beim Öffnen der App immer zuerst.
-const FEATURES = [home, search, study, review, diary, syncTab];
+// Home ist der Startbildschirm (mit der Suche): beim Öffnen der App immer zuerst.
+const FEATURES = [home, study, review, diary, syncTab];
 
 const $ = (id) => document.getElementById(id);
 const el = {
@@ -197,7 +196,8 @@ function buildTabs() {
 }
 
 function selectTab(id) {
-  if (id === 'tagging') id = 'diary'; // früherer eigener Tab
+  if (id === 'tagging') id = 'diary'; // frühere eigene Tabs
+  if (id === 'search') id = 'home';
   const f = FEATURES.find((x) => x.id === id) || FEATURES[0];
   if (activeTab && activeTab !== f.id) FEATURES.find((x) => x.id === activeTab)?.hide?.();
   activeTab = f.id;

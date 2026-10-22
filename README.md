@@ -13,12 +13,13 @@ Minimale PWA, um auf dem Android-Handy einen lokalen Obsidian-Vault schnell zu d
 ## Benutzung
 
 - **Vault öffnen** tippen und im Ordner-Dialog **nur den Vault-Ordner** auswählen (den Ordner, der `.obsidian/` enthält) – nicht „Interner Speicher“, „Documents“ o. Ä. Die App bekommt Lese- *und Schreib*zugriff auf genau diesen Ordner samt Unterordnern; gib ihr nicht mehr als nötig.
-Unten wechselst du zwischen den Modulen **Home**, **Suche**, **Study**, **Review**, **Diary** (darin **Taggen** und **Streams**) und **Settings**. Beim Öffnen der App startet sie immer auf **Home**.
+Unten wechselst du zwischen den Modulen **Home** (mit der Suche), **Study**, **Review**, **Diary** (darin **Taggen** und **Streams**) und **Settings**. Beim Öffnen der App startet sie immer auf **Home**.
 
-### Suche
+### Suche (auf Home)
 
-- Ein Suchfeld. Getippter Text wird mit Dateinamen und Inhalt aller Notizen abgeglichen (Teilstring, ohne Groß-/Kleinschreibung; mehrere Wörter müssen alle vorkommen). Treffer im Namen stehen oben, darunter ein Textausschnitt mit markierter Fundstelle. Enter öffnet den ersten Treffer.
-- Treffer antippen → Notiz bearbeiten → **Speichern** schreibt die Datei direkt zurück. Die Android-Zurück-Geste führt zurück zur Suche (mit Warnung bei ungespeicherten Änderungen).
+- Das Suchfeld steht oben auf **Home**; solange etwas drinsteht, zeigt Home nur die Treffer (Escape oder ✕ leert es). Ganz unten auf Home stehen der Stand des Abgleichs, ggf. „Zugriff erlauben“ und **Vault wechseln**.
+- Getippter Text wird mit Dateinamen und Inhalt aller Notizen abgeglichen (Teilstring, ohne Groß-/Kleinschreibung; mehrere Wörter müssen alle vorkommen). Treffer im Namen stehen oben, darunter ein Textausschnitt mit markierter Fundstelle. Enter öffnet den ersten Treffer.
+- Treffer antippen → Notiz bearbeiten → **Speichern** schreibt die Datei direkt zurück. Die Android-Zurück-Geste führt zurück zu Home (mit Warnung bei ungespeicherten Änderungen).
 - `.obsidian/`, `.trash/` und `.git/` werden ignoriert.
 
 ### Diary → Taggen
@@ -91,7 +92,7 @@ Fragen mit Status *bereit* sind gegen versehentliches Ändern gesperrt (der Text
 
 ### Home
 
-Startbildschirm, beim Öffnen der App immer zuerst. Bisher:
+Startbildschirm, beim Öffnen der App immer zuerst. Oben die Suche (siehe oben), darunter:
 
 - **Wichtige Todos:** alle Todos mit `!!!!` (wichtig) und `!!!!!` (unbedingt schnell) aus dem ganzen Vault, die dringendsten oben, darunter die älteste Notiz zuerst. Darunter steht, wo das Todo steht (Stapel · Datum · Frage). Antippen öffnet die VL im Study-Editor an der Stelle des Todos; gehört die Notiz zu keinem Stapel, öffnet sie sich im normalen Editor. Normale Todos (`!!!`) stehen weiter nur im Study-Tab.
 
@@ -226,7 +227,7 @@ In nicht unterstützten Browsern zeigt die App einen entsprechenden Hinweis.
 - `core.js` – Datenschicht: Vault-Zugriff, Zwischenspeicher (IndexedDB), Abgleich, CRUD (`read`, `create`, `update`, `remove`), Auslesen von Tags/Datum, Events (`change`, `status`).
 - `app.js` – Rahmen: Startseite, Tab-Leiste, gemeinsamer Editor.
 - `features/srs.js` – Review-Logik ohne DOM (Algorithmus, feste Intervalle, `Review.md`); `features/markdown.js` – Markdown-Renderer für die Rückseite.
-- `features/home.js` – Startbildschirm (wichtige Todos); weitere Bereiche als eigene Abschnitte dort.
+- `features/home.js` – Startbildschirm (Suche aus `features/search.js`, wichtige Todos); weitere Bereiche als eigene Abschnitte dort.
 - `obsidian-plugin/picker-changelog/` – Obsidian-Plugin, das Änderungen protokolliert (wird nicht von der PWA geladen).
 - `features/*.js` – Feature-Module `{ id, title, mount(root, ui), show() }`, in `app.js` unter `FEATURES` registriert. Module greifen nur über den Core auf Dateien zu.
 
