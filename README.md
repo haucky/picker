@@ -99,6 +99,7 @@ Startbildschirm, beim Öffnen der App immer zuerst. Oben die Suche (siehe oben),
   - nur `#pinned`: Titel, antippen klappt Inhalt und eigene Antworten auf (bleibt beim Neuzeichnen offen), darin **✏️ Bearbeiten**.
   - `#pinned/recent-answer`: Titel (antippen öffnet die Notiz) und nur die neueste eigene Antwort (`::TT.MM.JJJJ::`-Block).
   - mit festem Intervall (`#pinned` + `#review/weekly` usw.): erscheint nur, wenn die Karte fällig ist (dann ganz oben, blau umrandet), mit einem Antwortfeld. **Bestätigen** hängt `::TT.MM.JJJJ::` + Antwort an und setzt `#reviewed/…` auf heute – wie „✅ Erledigt“ im Review, das Intervall bleibt; danach verschwindet die Karte bis zum nächsten Termin. Ohne Antwort fragt die App nach, ob nur erledigt werden soll. Mit `#pinned/recent-answer` steht die neueste Antwort über dem Feld. Im Review-Tab erscheinen diese Karten weiterhin.
+  - `#pinned/always` (nur mit festem Intervall wirksam): die Karte bleibt auch an den übrigen Tagen sichtbar, dann ohne Antwortfeld mit „📅 wöchentlich · wieder am TT.MM.JJJJ“ – mit `#pinned/recent-answer` samt neuester Antwort, sonst wie ein normales `#pinned`. Beispiel: `#review/weekly #pinned/recent-answer #pinned/always`. Jeder Untertag von `#pinned` zählt schon als angepinnt, ein zusätzliches `#pinned` braucht es nicht.
 
 ### Review
 

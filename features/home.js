@@ -1,7 +1,8 @@
 // Tab Home: Startbildschirm. Oben die Suche (features/search.js; während gesucht wird, nur die Treffer), darunter
 // die Liste der wichtigen Todos (!!!! wichtig, !!!!! unbedingt schnell) aus allen Notizen – antippen springt im
 // Study-Editor zur Stelle (bzw. öffnet die Notiz, wenn sie zu keinem Stapel gehört) – und die angepinnten Fragen
-// (#pinned; #pinned/recent-answer = nur neueste Antwort; mit festem Intervall: nur wenn fällig, mit Antwortfeld).
+// (#pinned; #pinned/recent-answer = nur neueste Antwort; mit festem Intervall: nur wenn fällig, mit Antwortfeld –
+// mit #pinned/always auch sonst, dann ohne Antwortfeld).
 // Weitere Bereiche kommen als eigene Abschnitte dazu.
 import { h, stableView } from './dom.js';
 import { todoItems, dayOfNote, PRIO_IMPORTANT, PRIO_LABEL } from './studydoc.js';
@@ -21,6 +22,7 @@ let saving = false;
 
 const PIN = 'pinned';
 const PIN_RECENT = 'pinned/recent-answer';
+const PIN_ALWAYS = 'pinned/always'; // feste Intervalle auch zeigen, wenn nicht fällig
 
 /** Todos ab „wichtig“ aus allen Notizen: dringendste zuerst, dann älteste Notiz zuerst. */
 function importantTodos() {
@@ -52,8 +54,8 @@ function open(item) {
 /* ---------- Angepinnt ---------- */
 
 /**
- * Angepinnte Notizen: [{ note, recent, fixed: { interval, due } | null }]. Mit festem Intervall nur, wenn fällig
- * (die zuerst), sonst nach Titel.
+ * Angepinnte Notizen: [{ note, recent, fixed: { interval, due, isDue } | null }]. Mit festem Intervall nur, wenn
+ * fällig oder #pinned/always. Fällige zuerst, sonst nach Titel.
  */
 function pinnedNotes(day) {
   const out = [];
@@ -65,12 +67,12 @@ function pinnedNotes(day) {
     if (iv) {
       const last = reviewedDay(n.tags);
       const due = last == null ? day : addInterval(last, iv);
-      if (due > day) continue;
-      fixed = { interval: iv, due };
+      if (due > day && !n.tagsLower.includes(PIN_ALWAYS)) continue;
+      fixed = { interval: iv, due, isDue: due <= day };
     }
     out.push({ note: n, recent, fixed });
   }
-  return out.sort((a, b) => !!b.fixed - !!a.fixed || a.note.title.localeCompare(b.note.title, 'de'));
+  return out.sort((a, b) => !!b.fixed?.isDue - !!a.fixed?.isDue || a.note.title.localeCompare(b.note.title, 'de'));
 }
 
 function mdCtx(path) {
@@ -96,20 +98,25 @@ function contentDetails(note, summary, sub = false) {
 
 function pinCard({ note, recent, fixed }, day) {
   const title = h('button', { type: 'button', class: 'st-card-title', title: 'Notiz öffnen', onclick: () => ui.openNote(note.path) }, note.title + '?');
-  if (!fixed && !recent) return h('li', { class: 'st-card pin-card' }, contentDetails(note, note.title + '?'));
+  const meta = fixed ? h('div', { class: 'pin-meta' }, `📅 ${formatFixed(fixed.interval)} · ${dueText(fixed, day)}`) : null;
+  const due = fixed?.isDue;
+  // ohne recent-answer und nicht fällig: wie ein normales #pinned (Titel, Inhalt eingeklappt)
+  if (!due && !recent) return h('li', { class: 'st-card pin-card' }, contentDetails(note, note.title + '?'), meta);
 
-  const parts = [title];
-  if (fixed) {
-    const late = day - fixed.due;
-    parts.push(h('div', { class: 'pin-meta' }, `📅 ${formatFixed(fixed.interval)} · ${late > 0 ? `🔥 ${late} Tag${late === 1 ? '' : 'e'} überfällig` : 'heute fällig'}`));
-  }
+  const parts = [title, meta];
   if (recent) {
     const last = entryParts(note.text).answers.at(-1);
     parts.push(last ? answersEl([last], note.path) : h('div', { class: 'pin-meta' }, 'Noch keine Antwort.'));
   }
-  if (fixed) parts.push(answerForm(note, fixed));
-  if (fixed && !recent) parts.push(contentDetails(note, 'Inhalt & Antworten', true));
-  return h('li', { class: 'st-card pin-card' + (fixed ? ' due' : '') }, ...parts);
+  if (due) parts.push(answerForm(note, fixed));
+  if (due && !recent) parts.push(contentDetails(note, 'Inhalt & Antworten', true));
+  return h('li', { class: 'st-card pin-card' + (due ? ' due' : '') }, ...parts);
+}
+
+function dueText(fixed, day) {
+  const late = day - fixed.due;
+  if (late > 0) return `🔥 ${late} Tag${late === 1 ? '' : 'e'} überfällig`;
+  return late === 0 ? 'heute fällig' : `wieder am ${dayToGerman(fixed.due)}`;
 }
 
 /** Antwortfeld für eine fällige Karte mit festem Intervall: Bestätigen hängt die Antwort an und setzt #reviewed. */
