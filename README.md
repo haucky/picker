@@ -263,6 +263,12 @@ Findet Fragen, die dasselbe meinen, aber anders heißen (z. B. „Was ist ein Eq
 
 **Im Editor** (VL-Editor, Diary → Schreiben): Beim Verlassen der Zeile einer neuen Frage wird zuerst nach fast gleich geschriebenen Fragen gesucht (Tippfehler; sofort, ohne KI – das geht auch ohne Ollama und am Handy). Mit eingeschaltetem lokalem Server und einmal berechneten Vektoren werden die 3 ähnlichsten vorhandenen Fragen (ab 0,75) dem Sprachmodell vorgelegt. Solange das läuft, dreht sich hinter der Frage ein kleiner Kreis (mehrere Fragen werden nacheinander geprüft, auch eingefügte). Sagt das Modell „dieselbe Frage“, steht ein violettes **≈** dahinter; sonst erscheint kurz ein grauer **✓** (antippen zeigt, wie viele ähnliche geprüft wurden), bei einem Fehler kurz **⚠**. Gibt es noch keine berechneten Vektoren, erscheint einmal kurz **i** mit dem Hinweis, sie unter Settings zu berechnen; danach werden solche Fragen von selbst nochmal geprüft. Ohne eingeschalteten lokalen Server gibt es nur die Tippfehler-Prüfung. Antippen öffnet die vorhandene Frage im Nebenfenster mit denselben Optionen wie beim „!“ (Zusammenführen bzw. als Antwort anhängen – in die ähnliche Frage, Link einfügen) und **✕ Keine Dublette**. Anders als das „!“ blockiert das „≈“ das Speichern nicht. Verglichen wird auch mit den anderen Fragen der gerade offenen VL; ist die ähnliche Frage eine davon, bietet das Menü **Zur Frage springen**, **Link einfügen** und **Keine Dublette** (Zusammenführen geht dann direkt im Text). Fragen, die nach dem letzten Berechnen dazukamen, werden erst nach dem nächsten **Berechnen & vergleichen** gefunden.
 
+**Verwandte Fragen (gespeicherte):** Für Fragen, die schon Vektoren haben, zeigt die App verwandte Fragen – ohne Sprachmodell und ohne Server (die Vektoren liegen ja im Vault), also auch am Handy:
+- **VL-Editor:** hinter jeder gespeicherten Frage mit verwandten ein dezentes **↔ N**. Antippen listet sie (Frage, Ordner · Datum, Ähnlichkeit, ggf. „dieselbe Frage“, wenn das Sprachmodell das Paar schon so bewertet hat); eine antippen öffnet sie im Nebenfenster bzw. springt hin, wenn sie in dieser VL steht.
+- **Review-Rückseite:** unter der Antwort eingeklappt **Verwandte Fragen (N)**, antippen öffnet die Frage im Nebenfenster.
+
+Verwandt sind die bis zu 5 ähnlichsten ab **Verwandt ab** (Settings → Ähnliche Fragen, Standard 0,80). Anders als das ≈ ist das kein Dubletten-Hinweis, sondern zum Nachschlagen gedacht.
+
 ## Obsidian-Plugin „Picker Changelog“
 
 Das Plugin in `obsidian-plugin/picker-changelog/` schreibt jede Änderung an Notizen (neu, geändert, gelöscht, umbenannt) als Zeile nach `.picker/changes.log` im Vault. Die PWA liest beim Start nur dieses Log und prüft genau die genannten Dateien. Das Plugin ist nur auf Mobilgeräten aktiv; auf dem Desktop tut es nichts.
@@ -299,7 +305,7 @@ In nicht unterstützten Browsern zeigt die App einen entsprechenden Hinweis.
 - `core.js` – Datenschicht: Vault-Zugriff, Zwischenspeicher (IndexedDB), Abgleich, CRUD (`read`, `create`, `update`, `remove`), Auslesen von Tags/Datum, Events (`change`, `status`).
 - `app.js` – Rahmen: Startseite, Tab-Leiste, gemeinsamer Editor.
 - `features/srs.js` – Review-Logik ohne DOM (Algorithmus, feste Intervalle, `Review.md`); `features/markdown.js` – Markdown-Renderer für die Rückseite.
-- `features/similar.js` – ähnliche Fragen: Embeddings über Ollama, `.picker/embeddings.json`, Paare finden (Oberfläche in Settings).
+- `features/similar.js` – ähnliche Fragen: Embeddings über Ollama, `.picker/embeddings.json`, Paare finden, verwandte Fragen (Oberfläche in Settings, `features/conflicts.js`, `features/related.js`).
 - `features/conflicts.js` – Fragen, die es schon gibt: Erkennen, Optionen, Link einfügen; `features/peek.js` – Nebenfenster zum Bearbeiten einer vorhandenen Notiz (Frage, Tags, Inhalt).
 - `features/qeditor.js` – gemeinsamer Fragen-Editor (Markierungen, Fehler/Hinweise) für den VL-Editor (Study) und Diary → Schreiben; die Logik dazu (Fragen, Datumszeilen, Speichern planen) in `features/studydoc.js`.
 - `features/home.js` – Startbildschirm (Suche aus `features/search.js`, wichtige Todos); weitere Bereiche als eigene Abschnitte dort.

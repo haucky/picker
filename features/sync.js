@@ -11,7 +11,7 @@ import {
 import { PROMPTS_PATH, parsePrompts } from './prompts.js';
 import {
   FILE as EMBED_FILE, DEFAULT_MODEL, embedModel, setEmbedModel, parseStore, updateStore, similarPairs, sameQuestion,
-  judgedSame, seedJudged, judgedJSON,
+  judgedSame, seedJudged, judgedJSON, resetVectors, RELATED_MINS, relatedMin, setRelatedMin,
 } from './similar.js';
 
 const SHOW_ENTRIES = 30;
@@ -176,13 +176,18 @@ function similarSection() {
   simBox = h('div', { class: 'sim-result' });
   const btn = h('button', { type: 'button', class: 'btn', onclick: () => runSimilar(btn) }, 'Berechnen & vergleichen');
   return [
-    textField('Embedding-Modell', embedModel(), DEFAULT_MODEL, (e) => { setEmbedModel(e.target.value); e.target.value = embedModel(); },
+    textField('Embedding-Modell', embedModel(), DEFAULT_MODEL, (e) => { setEmbedModel(e.target.value); e.target.value = embedModel(); resetVectors(); },
       { list: 'ai-local-models' }),
+    h('label', { class: 'settings-model' }, h('span', { class: 'kv-label' }, 'Verwandt ab'),
+      h('select', { class: 'filter', onchange: (e) => setRelatedMin(+e.target.value) },
+        ...RELATED_MINS.map((m) => h('option', { value: m, selected: m === relatedMin() }, m.toFixed(2).replace('.', ','))))),
     h('div', { class: 'btn-row' }, btn),
     h('p', { class: 'hint left' },
       'Am Computer mit lokalem Server (oben): berechnet für jede Frage (Dateiname) einen Vektor, speichert sie in ' +
       `.picker/${EMBED_FILE} (danach nur Neues und Geändertes) und zeigt die ähnlichsten Fragenpaare. „Mit Sprachmodell ` +
-      'prüfen“ lässt das schnelle Modell entscheiden, ob zwei Fragen wirklich dasselbe fragen. Einrichtung: README, „Ähnliche Fragen“.'),
+      'prüfen“ lässt das schnelle Modell entscheiden, ob zwei Fragen wirklich dasselbe fragen. „Verwandt ab“: ab welcher ' +
+      'Ähnlichkeit gespeicherte Fragen im VL-Editor (↔ N) und auf der Review-Rückseite als verwandt gezeigt werden (geht auch ' +
+      'ohne Server, z. B. am Handy). Einrichtung: README, „Ähnliche Fragen“.'),
     simBox,
   ];
 }
@@ -206,6 +211,7 @@ async function runSimilar(btn) {
       model, save,
       onProgress: (done, all) => { status.textContent = all ? `Berechne Vektoren … ${done} / ${all}` : 'Alle Vektoren aktuell.'; },
     });
+    resetVectors(); // Editor und Review sehen den neuen Stand
     status.textContent = `${total} Fragen, ${computed} neu berechnet (${((Date.now() - t0) / 1000).toFixed(1)} s). Vergleiche …`;
     simPairs = await similarPairs(store, {
       min: MIN_SCORES.at(-1), limit: 500,

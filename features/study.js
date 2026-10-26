@@ -217,6 +217,7 @@ async function openVL(deck, day, focus, btn) {
     ui, mode: 'vl',
     exclude: (n) => !!ed && ed.originals.some((o) => o.path === n.path),
     isNew: (title) => !!ed && !ed.originals.some((o) => o.title.toLowerCase() === title.toLowerCase()),
+    pathOf: (title) => ed?.originals.find((o) => o.title.toLowerCase() === title.toLowerCase())?.path ?? null,
     onChange: () => { if (ed?.cm) { update(); storeDraft(); } },
   });
   if (restore) ed.conflicts.load(draft.conflicts);

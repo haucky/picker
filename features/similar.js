@@ -145,12 +145,50 @@ const dot = (a, b) => { let d = 0; for (let k = 0; k < a.length; k++) d += a[k] 
 
 /** Gespeicherten Stand für den Editor laden (nur mit eingeschaltetem lokalen Server); null, wenn es keinen gibt. */
 export async function loadStore(core) {
-  if (!localOn()) return null;
-  const model = embedModel();
-  const store = parseStore(await core.readAppFile(FILE).catch(() => null), model);
+  return localOn() ? readVectors(core) : null;
+}
+
+/** Gespeicherte Vektoren lesen: Stand mit `vecs` (Map Pfad → Vektor) oder null, wenn es (für dieses Modell) keine gibt. */
+async function readVectors(core) {
+  const store = parseStore(await core.readAppFile(FILE).catch(() => null), embedModel());
   if (!Object.keys(store.items).length) return null;
   store.vecs = new Map(Object.entries(store.items).map(([p, [, b64]]) => [p, unpack(b64)]));
   return store;
+}
+
+/* ---------- Verwandte Fragen (gespeicherte untereinander, ohne Server) ---------- */
+
+// Für gespeicherte Fragen liegen die Vektoren schon im Vault: der Vergleich ist reines Rechnen im Browser – ohne
+// Ollama, auch am Handy. Ergebnis gecacht, bis neu berechnet wird (resetVectors).
+const RELATED_KEY = 'related-min';
+export const RELATED_MINS = [0.9, 0.85, 0.8, 0.75, 0.7];
+export const relatedMin = () => { const v = parseFloat(get(RELATED_KEY, '0.8')); return RELATED_MINS.includes(v) ? v : 0.8; };
+export const setRelatedMin = (v) => { set(RELATED_KEY, String(v), '0.8'); relatedCache.clear(); };
+
+let shared = null;        // Promise des gespeicherten Stands (oder null)
+let sharedAt = 0;
+const relatedCache = new Map(); // Pfad → [{ path, score }]
+
+/** Gespeicherte Vektoren (gecacht; fehlen sie, wird nach 30 s wieder gesucht). */
+export function vectors(core) {
+  if (!shared || (sharedAt && Date.now() - sharedAt > 30000)) {
+    sharedAt = 0;
+    shared = readVectors(core).catch(() => null).then((st) => { if (!st) sharedAt = Date.now(); return st; });
+  }
+  return shared;
+}
+
+/** Nach dem Berechnen: neu laden. */
+export function resetVectors() { shared = null; sharedAt = 0; relatedCache.clear(); }
+
+/** Verwandte Fragen zu einer gespeicherten Notiz: bis zu `k` ähnlichste ab relatedMin(), ohne sie selbst. */
+export async function relatedTo(core, path, { k = 5 } = {}) {
+  if (relatedCache.has(path)) return relatedCache.get(path);
+  const st = await vectors(core);
+  const vec = st?.vecs.get(path);
+  const out = vec ? nearest(st, vec, { min: relatedMin(), k, skip: (p) => p === path || !core.get(p) }) : [];
+  relatedCache.set(path, out);
+  return out;
 }
 
 const vecCache = new Map(); // Modell \0 Titel → Vektor

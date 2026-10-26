@@ -10,6 +10,9 @@ import {
   formatFixed, formatIntervalShort, sameInterval, intervalTag, dayToGerman,
 } from './srs.js';
 import { studyOrder } from './studydoc.js';
+import { relatedTo } from './similar.js';
+import { relatedRows } from './related.js';
+import { openPeek, closePeek } from './peek.js';
 
 const RESPONSE_LABEL = { hard: 'Schwer', good: 'Gut', easy: 'Leicht' };
 // Auswahl beim Erledigen fester Intervalle; die gewählte wird zum neuen Intervall der Notiz.
@@ -307,10 +310,26 @@ function renderCard() {
         h('summary', {}, `Deine Antworten (${count})`),
         renderMarkdown(answers.replace(/^::(\d{2}\.\d{2}\.\d{4})::\s*$/gm, '#### $1'), ctx)));
     }
+    parts.push(relatedBox(note));
     parts.push(ratingRow(card, note));
   }
   parts.push(actions(card));
   sessionEl.replaceChildren(...parts);
+}
+
+/**
+ * Verwandte Fragen (aus den gespeicherten Embeddings, ohne Server): eingeklappt unter der Rückseite, erscheint erst,
+ * wenn es welche gibt. Antippen öffnet die Frage im Nebenfenster.
+ */
+function relatedBox(note) {
+  const box = h('details', { class: 'answers related', hidden: true });
+  relatedTo(core, note.path).then((list) => {
+    const rows = relatedRows(core, note.title, list, (n) => openPeek(ui, n, { label: 'Verwandt' }));
+    if (!rows.length || !box.isConnected) return;
+    box.replaceChildren(h('summary', {}, `Verwandte Fragen (${rows.length})`), h('div', { class: 'rel-list' }, ...rows));
+    box.hidden = false;
+  }, () => {});
+  return box;
 }
 
 function answerBox(note) {
@@ -378,6 +397,7 @@ function reveal() {
 }
 
 function advance() {
+  closePeek(true);
   session.index++;
   session.revealed = false;
   session.answering = false;
@@ -544,7 +564,7 @@ export default {
     // 1–7 = Erledigt mit Intervall aus der Auswahl, u = rückgängig
     document.addEventListener('keydown', (e) => {
       if (!session || root.hidden || sessionEl.hidden || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) return;
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable) return; // z. B. im Nebenfenster
       if (!document.getElementById('view-editor').hidden) return;
       const card = current();
       if (!card) return;

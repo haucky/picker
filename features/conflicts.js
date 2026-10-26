@@ -7,7 +7,8 @@
 // (similar.js) wird eine neue Frage beim Verlassen der Zeile mit den ähnlichsten vorhandenen verglichen; sagt das
 // schnelle Sprachmodell „dieselbe Frage“, steht ein „≈“ dahinter – gleiche Optionen, aber es blockiert nichts.
 import { h } from './dom.js';
-import { loadStore, embedTitle, nearest, sameQuestion, textSimilarity } from './similar.js';
+import { loadStore, embedTitle, nearest, sameQuestion, textSimilarity, relatedTo } from './similar.js';
+import { relatedRows } from './related.js';
 import { localOn } from './llm.js';
 import { popMenu, closeMenu, questionLines } from './qeditor.js';
 import { parseQuestion, parseDayLine } from './studydoc.js';
@@ -29,9 +30,10 @@ const LABEL = { merge: 'wird zusammengeführt', here: 'wird zusammengeführt und
 /**
  * opts: { ui, mode: 'vl' | 'diary', exclude(note) → true für Notizen, die zum Dokument selbst gehören,
  *         isNew(title) → false für Fragen, die nicht auf Ähnlichkeit geprüft werden (z. B. schon gespeicherte der VL),
+ *         pathOf(title) → Pfad einer schon gespeicherten Frage des Dokuments (für „↔ N“ verwandte Fragen) oder null,
  *         onChange() (Markierungen/Entwurf/Hinweise neu, z. B. nach einer Entscheidung oder einer Änderung im Vault) }.
  */
-export function createConflicts({ ui, mode, exclude = () => false, isNew = () => true, onChange }) {
+export function createConflicts({ ui, mode, exclude = () => false, isNew = () => true, pathOf = () => null, onChange }) {
   const core = ui.core;
   const resolutions = new Map(); // Titel (klein) → Entscheidung (gleicher Name)
   const similar = new Map();     // Titel (klein) → 'pending' | null (nichts) | { path, score } (ähnliche Frage)
@@ -39,6 +41,8 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
   const dismissed = new Set();   // Titel (klein): „keine Dublette“
   const checked = new Map();     // Titel (klein) → { at, text, title }: kurz angezeigtes Ergebnis einer Prüfung ohne Treffer
   const SHOW_CHECKED = 4000;
+  const related = new Map();     // Pfad → [{ path, score }] verwandte Fragen der gespeicherten Fragen (aus den Embeddings)
+  let relatedBusy = false;
   let store;                     // Promise der Embeddings (similar.js; Ergebnis null = noch keine berechnet)
   let storeMissingAt = 0;        // wann zuletzt keine gefunden wurden (erneut suchen höchstens alle 15 s)
   const noStoreShown = new Set(); // Titel (klein), bei denen der Hinweis „erst berechnen“ schon kam
@@ -208,6 +212,40 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
     if (cm) { cm.refresh(); if (found) onChange(); }
   }
 
+  /* ---------- Verwandte Fragen (gespeicherte, „↔ N“) ---------- */
+
+  /** Verwandte Fragen für alle gespeicherten Fragen des Dokuments berechnen, die noch fehlen (im Hintergrund). */
+  async function ensureRelated() {
+    if (relatedBusy || !cm) return;
+    const paths = questionLines(cm.value.split('\n')).map((q) => pathOf(q.title)).filter((p) => p && !related.has(p));
+    if (!paths.length) return;
+    relatedBusy = true;
+    try {
+      for (const p of paths) {
+        related.set(p, await relatedTo(core, p));
+        await new Promise((r) => setTimeout(r)); // Editor bedienbar lassen
+      }
+    } finally {
+      relatedBusy = false;
+    }
+    cm?.refresh();
+  }
+
+  function showRelated(line, rect) {
+    const q = parseQuestion(lineText(line));
+    const list = q && related.get(pathOf(q.title));
+    if (!list?.length) return;
+    const pick = (n) => {
+      closeMenu();
+      const at = exclude(n) ? docLine(n.title) : -1;
+      if (at >= 0) cm.jumpToLine(at); // steht hier im Editor
+      else openPeek(ui, n, { label: 'Verwandt', openLink: peekLink, onSaved: () => { cm?.refresh(); onChange(); } });
+    };
+    popMenu(rect || { left: 16, bottom: 80 }, (el) => el.replaceChildren(
+      h('div', { class: 'qmenu-label' }, `Verwandte Fragen (${list.length})`),
+      ...relatedRows(core, q.title, list, pick)), 'qconf-menu rel-menu', inPeek);
+  }
+
   // Prüfungen nacheinander (nicht parallel), damit der lokale Server nicht mehrere auf einmal rechnen muss
   let queue = Promise.resolve();
   const queued = new Set(); // Titel (klein), die auf ihre Prüfung warten (Ladeanzeige schon sichtbar)
@@ -285,7 +323,7 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
   return {
     resolutions,
     existing,
-    attach(editor) { cm = editor; },
+    attach(editor) { cm = editor; setTimeout(ensureRelated); },
     /** Editor geschlossen: nicht mehr auf Änderungen im Vault hören. */
     destroy() { off(); cm = null; closeMenu(); closePeek(true); },
     /** Für planSave: ähnliche Frage, bei der zusammengeführt bzw. angehängt werden soll → { path, action } oder null. */
@@ -302,6 +340,7 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
       if (line === active) return;
       active = line;
       checkLeft(); // u. a. die gerade verlassene Frage auf ähnliche prüfen
+      ensureRelated();
       cm?.refresh();
       onChange();
     },
@@ -320,7 +359,13 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
         if (!sim && c && Date.now() - c.at < SHOW_CHECKED) {
           return [{ line, badge: { at: q.tagsAt, text: c.text, class: 'checked', title: c.title, onClick: () => ui.toast(c.title, 4000) } }];
         }
-        if (!sim) return [];
+        if (!sim) {
+          const rel = related.get(pathOf(q.title));
+          if (!rel?.length) return [];
+          return [{ line, badge: {
+            at: q.tagsAt, text: '↔ ' + rel.length, class: 'related', title: `${rel.length} verwandte Fragen – antippen`, onClick: showRelated,
+          } }];
+        }
         const r = simRes.get(q.title.toLowerCase());
         const res = r && r.path === sim.note.path ? r.action : null;
         return [{ line, badge: {
@@ -356,6 +401,6 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
       for (const [k, v] of d.sim || []) simRes.set(k, v);
       for (const k of d.dismissed || []) dismissed.add(k);
     },
-    clear() { resolutions.clear(); simRes.clear(); dismissed.clear(); similar.clear(); store = undefined; },
+    clear() { resolutions.clear(); simRes.clear(); dismissed.clear(); similar.clear(); related.clear(); store = undefined; setTimeout(ensureRelated); },
   };
 }
