@@ -122,21 +122,31 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
   /* ---------- Ähnliche Fragen ---------- */
 
   /** Ähnliche vorhandene Frage (vom Sprachmodell bestätigt) oder null. */
+  /** Zeile der Frage `title` im Dokument (Groß-/Kleinschreibung egal) oder -1. */
+  const docLine = (title) => questionLines(cm ? cm.value.split('\n') : [])
+    .find((q) => q.title.toLowerCase() === title.toLowerCase())?.line ?? -1;
+
+  /**
+   * Ähnliche vorhandene Frage (vom Sprachmodell bestätigt) oder null: { note, score, inDoc }. `inDoc` = die Frage
+   * gehört zum Dokument selbst (z. B. eine andere Frage derselben VL) – dann nur, solange sie noch im Text steht.
+   */
   function similarTo(title) {
     const key = title.toLowerCase();
     const m = similar.get(key);
     if (!m || m === 'pending' || dismissed.has(key)) return null;
     const note = core.get(m.path);
-    return note && !exclude(note) ? { note, score: m.score } : null;
+    if (!note) return null;
+    const inDoc = exclude(note);
+    return !inDoc || docLine(note.title) >= 0 ? { note, score: m.score, inDoc } : null;
   }
 
-  /** Neue Frage prüfen (im Hintergrund): Embedding → ähnlichste vorhandene → Sprachmodell. */
   /** Ergebnis ohne Treffer kurz hinter der Frage zeigen (✓ bzw. Hinweis), dann wieder ausblenden. */
   function flash(key, text, title) {
     checked.set(key, { at: Date.now(), text, title });
     setTimeout(() => cm?.refresh(), SHOW_CHECKED + 50);
   }
 
+  /** Neue Frage prüfen (im Hintergrund): Embedding → ähnlichste vorhandene → Sprachmodell. */
   async function check(title) {
     const key = title.toLowerCase();
     if (similar.has(key) || existing(title) || !isNew(title) || !localOn()) return; // ohne lokalen Server: still
@@ -158,7 +168,11 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
         return;
       } else {
         const vec = await embedTitle(st, title);
-        const cands = nearest(st, vec, { skip: (path) => { const n = core.get(path); return !n || exclude(n) || n.title.toLowerCase() === key; } });
+        // Kandidaten: alle gespeicherten Fragen außer dieser selbst; Fragen des Dokuments nur, wenn sie noch im Text stehen
+        const cands = nearest(st, vec, { skip: (path) => {
+          const n = core.get(path);
+          return !n || n.title.toLowerCase() === key || (exclude(n) && docLine(n.title) < 0);
+        } });
         for (const c of cands) {
           if (await sameQuestion(title, core.get(c.path).title)) { found = { path: c.path, score: c.score }; break; }
         }
@@ -196,6 +210,17 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
     const sim = q && similarTo(q.title);
     if (!sim) return;
     const key = q.title.toLowerCase();
+    const scoreText = sim.score.toFixed(2).replace('.', ',');
+    if (sim.inDoc) { // steht hier im Editor: kein Nebenfenster, kein Zusammenführen – hinspringen
+      const at = docLine(sim.note.title);
+      const item = (label, onclick) => h('button', { type: 'button', role: 'menuitem', class: 'qmenu-item', onclick }, label);
+      popMenu(rect || { left: 16, bottom: 80 }, (el) => el.replaceChildren(
+        h('div', { class: 'qmenu-label' }, `Ähnliche Frage hier im Text (${scoreText}): „${sim.note.title}?“`),
+        item(`↧ Zur Frage springen (Zeile ${at + 1})`, () => { closeMenu(); cm.jumpToLine(at); }),
+        item('🔗 Link einfügen', () => { closeMenu(); insertLink(line, sim.note.title); }),
+        item('✕ Keine Dublette', () => { dismissed.add(key); closeMenu(); cm.refresh(); onChange(); })), 'qconf-menu');
+      return;
+    }
     const chosen = simRes.get(key)?.path === sim.note.path ? simRes.get(key).action : null;
     const decide = (action) => {
       if (action) simRes.set(key, { action, path: sim.note.path }); else simRes.delete(key);
@@ -244,7 +269,7 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
     similarMerge(title) {
       const sim = similarTo(title);
       const r = simRes.get(title.toLowerCase());
-      return sim && r && r.path === sim.note.path ? r : null;
+      return sim && !sim.inDoc && r && r.path === sim.note.path ? r : null;
     },
     /** Für den Editor: [[Link]] im Nebenfenster öffnen. */
     openLink: (target) => peekLink(target),
@@ -277,7 +302,8 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
         const res = r && r.path === sim.note.path ? r.action : null;
         return [{ line, badge: {
           at: q.tagsAt, text: res ? BADGE[res] : '≈', class: res ? 'resolved' : 'similar',
-          title: res ? `Ähnlich zu „${sim.note.title}?“ – ${LABEL[res]}` : `Ähnlich zu „${sim.note.title}?“ – antippen`,
+          title: res ? `Ähnlich zu „${sim.note.title}?“ – ${LABEL[res]}`
+            : `Ähnlich zu „${sim.note.title}?“${sim.inDoc ? ' (hier im Text)' : ''} – antippen`,
           onClick: showSimilar,
         } }];
       }

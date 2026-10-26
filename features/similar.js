@@ -130,7 +130,7 @@ export async function similarPairs(store, { min = 0.8, limit = 200, onProgress =
       const b = vecs[j];
       let dot = 0;
       for (let k = 0; k < a.length; k++) dot += a[k] * b[k];
-      const score = dot / scale;
+      const score = Math.min(1, dot / scale);
       if (score >= min) out.push({ a: paths[i], b: paths[j], score });
     }
     if (i % 200 === 199) { onProgress(i + 1, vecs.length); await new Promise((r) => setTimeout(r)); }
@@ -141,7 +141,7 @@ export async function similarPairs(store, { min = 0.8, limit = 200, onProgress =
 
 /* ---------- Einzelne Frage (Editor) ---------- */
 
-const dot = (a, b) => { let d = 0; for (let k = 0; k < a.length; k++) d += a[k] * b[k]; return d / (127 * 127); };
+const dot = (a, b) => { let d = 0; for (let k = 0; k < a.length; k++) d += a[k] * b[k]; return Math.min(1, d / (127 * 127)); }; // Rundung (int8) kann knapp über 1 liegen
 
 /** Gespeicherten Stand für den Editor laden (nur mit eingeschaltetem lokalen Server); null, wenn es keinen gibt. */
 export async function loadStore(core) {
