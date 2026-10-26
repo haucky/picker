@@ -5,8 +5,7 @@
 import { parseTags } from '../core.js';
 import { h } from './dom.js';
 import { createEditor } from './editor.js';
-import { splitNote, normBody, setContent, setTagLine, tagLineTags, titleProblem, dayOfNote } from './studydoc.js';
-import { dayToGerman } from './srs.js';
+import { splitNote, normBody, setContent, setTagLine, tagLineTags, titleProblem, contextOf } from './studydoc.js';
 
 const wide = matchMedia('(min-width: 900px)');
 let cur = null; // { note, el, ed, tagsEd, title, opened, body, tagsText, onClose }
@@ -22,11 +21,6 @@ export const inPeek = (node) => !!cur && cur.el.contains(node);
 const isDirty = () => !!cur && (cur.ed.value !== cur.body || cur.tagsEd.value.trim() !== cur.tagsText ||
   cur.title.value.trim().replace(/\?+$/, '').trim() !== cur.note.title);
 
-function where(n) {
-  const dir = n.path.includes('/') ? n.path.slice(0, n.path.lastIndexOf('/')) : 'oberster Ordner';
-  const day = dayOfNote(n);
-  return [dir, day != null ? dayToGerman(day) : null].filter(Boolean).join(' · ');
-}
 
 /** Nebenfenster abbauen (ohne Rückfrage und ohne den Verlaufseintrag anzufassen). */
 function teardown() {
@@ -87,7 +81,7 @@ export function openPeek(ui, note, opts = {}) {
     : null;
   const el = h('aside', { class: 'peek', role: 'dialog', 'aria-label': 'Vorhandene Frage' },
     h('div', { class: 'qpop-head' },
-      h('span', { class: 'qpop-where' }, opts.label ? h('strong', {}, opts.label + ' · ') : null, where(note)),
+      h('span', { class: 'qpop-where' }, opts.label ? h('strong', {}, opts.label + ' · ') : null, contextOf(note)),
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Schließen', onclick: () => closePeek() }, '×')),
     actions, title, tagsHost, host, errEl,
     h('div', { class: 'qpop-row' },

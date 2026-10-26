@@ -55,6 +55,16 @@ export function studyOrder(text) {
 /** Datum einer Notiz als Kalendertag (wie in srs.js) oder null. */
 export const dayOfNote = (note) => (note.date == null ? null : Math.round(note.date / 864e5));
 
+/** Primary Tag: der erste Tag der Notiz (ohne #date/…) – gibt den Kontext einer Frage an, z. B. #uni/dbs. */
+export const primaryTag = (note) => note.tags.find((t) => !/^date\//i.test(t)) || null;
+
+/** Kontext einer Notiz für Listen: „#primary-tag · TT.MM.JJJJ“. */
+export function contextOf(note) {
+  const tag = primaryTag(note);
+  const day = dayOfNote(note);
+  return [tag ? '#' + tag : null, day != null ? dayToGerman(day) : null].filter(Boolean).join(' · ') || '–';
+}
+
 /**
  * Teilt eine Notiz in Kopf und Inhalt: { bom, front, head, content }. `head` ist die Tag-Zeile samt
  * folgender Leerzeilen (oder nur Leerzeilen). bom + front + head + content === text.

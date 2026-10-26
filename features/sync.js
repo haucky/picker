@@ -9,6 +9,7 @@ import {
   tinfoilModel, setTinfoilModel, unloadLocal,
 } from './llm.js';
 import { PROMPTS_PATH, parsePrompts } from './prompts.js';
+import { contextOf } from './studydoc.js';
 import {
   FILE as EMBED_FILE, DEFAULT_MODEL, embedModel, setEmbedModel, parseStore, updateStore, similarPairs, sameQuestion,
   judgedSame, seedJudged, judgedJSON, resetVectors, RELATED_MINS, relatedMin, setRelatedMin,
@@ -269,11 +270,7 @@ async function judgePairs(btn, status) {
 }
 
 function renderPairs(status) {
-  const where = (path) => {
-    const n = core.get(path);
-    const dir = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : 'oberster Ordner';
-    return n && n.date != null ? `${dir} · ${new Date(n.date).toLocaleDateString('de-DE', { timeZone: 'UTC' })}` : dir;
-  };
+  const where = (path) => { const n = core.get(path); return n ? contextOf(n) : ''; };
   const title = (path) => (core.get(path)?.title ?? path) + '?';
   const shown = simPairs.filter((p) => p.score >= simMin);
   const verdict = (p) => judgedSame(title(p.a).slice(0, -1), title(p.b).slice(0, -1));
