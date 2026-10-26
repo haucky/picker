@@ -18,6 +18,7 @@ const TIER_OF = { correct: 'fast', judge: 'fast', prompt: 'good' }; // Zweck →
 export const DEFAULT_LOCAL_URL = 'http://localhost:11434';
 /** Lokale Modelle (Ollama-Namen). Qwen 3.5: mehrsprachig, gutes Deutsch, laufen auf einem M3; „Thinking“ ist aus. */
 export const DEFAULT_LOCAL = { fast: 'qwen3.5:4b', good: 'qwen3.5:9b' };
+const CONTEXT = { fast: 2048, good: 8192 }; // Kontextfenster lokal (Tokens), siehe chatLocal
 /** Tinfoil-Modelle (IDs aus dem Tinfoil-Katalog, der sich öfter ändert; aktuelle Liste: listModels('tinfoil')). */
 export const DEFAULT_TINFOIL = { fast: 'gemma4-31b', good: 'deepseek-v4-1-flash' };
 const TINFOIL_STORE = { fast: 'ai-model:correct', good: 'ai-model:prompt' }; // ältere Schlüssel weiterverwenden
@@ -107,16 +108,20 @@ function abortable(promise, signal) {
 
 /* ---------- Lokal (Ollama) ---------- */
 
-/** Chat über Ollama (/api/chat, ohne „Thinking“); mit onDelta gestreamt (NDJSON). */
-async function chatLocal({ model, messages, maxTokens, temperature, signal, onDelta }) {
+/**
+ * Chat über Ollama (/api/chat, ohne „Thinking“); mit onDelta gestreamt (NDJSON). `context` = Kontextfenster in Tokens:
+ * ausdrücklich klein halten – sonst reserviert Ollama für manche Modelle (z. B. Qwen 3.5) riesige Kontexte, und der
+ * Speicher eines Laptops läuft voll.
+ */
+async function chatLocal({ model, messages, maxTokens, temperature, context, signal, onDelta }) {
   let res;
   try {
     res = await fetch(localUrl() + '/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model, messages, stream: !!onDelta, think: false,
-        options: { temperature, num_predict: maxTokens },
+        model, messages, stream: !!onDelta, think: false, keep_alive: '5m',
+        options: { temperature, num_predict: maxTokens, num_ctx: context },
       }),
       signal,
     });
@@ -148,6 +153,15 @@ async function chatLocal({ model, messages, maxTokens, temperature, signal, onDe
     }
   }
   return out;
+}
+
+/** Modell auf dem lokalen Server aus dem Speicher nehmen (z. B. vor einer langen Prüfung mit einem anderen). */
+export async function unloadLocal(model) {
+  try {
+    await fetch(localUrl() + '/api/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, keep_alive: 0 }),
+    });
+  } catch { /* egal */ }
 }
 
 /** Modelle auf dem lokalen Server (Namen). */
@@ -192,13 +206,14 @@ async function chatTinfoil({ model, messages, maxTokens, temperature, signal, on
  * Tinfoil (falls eingeschaltet).
  * opts: { system, user | messages, purpose ('correct' | 'prompt' | 'judge') bzw. tier ('fast' | 'good'),
  *         via ('local' | 'tinfoil': nur diesen Anbieter, z. B. zum Testen), model (überschreibt das der Stufe),
- *         maxTokens, temperature, timeout (ms), signal, onDelta(stück, bisher) – dann wird gestreamt }
+ *         maxTokens, temperature, context (Kontextfenster lokal, Standard je Stufe), timeout (ms), signal,
+ *         onDelta(stück, bisher) – dann wird gestreamt }
  * Fehler: LLMError('no-ai'|'no-local'|'no-model'|'no-key'|'offline'), DOMException AbortError (signal) bzw.
  * TimeoutError (timeout), sonst API-Fehler.
  */
 export async function chat({
   system, user, messages, purpose = 'correct', tier = TIER_OF[purpose] || 'fast', via, model, maxTokens = 256,
-  temperature = 0.2, timeout = 0, signal, onDelta,
+  temperature = 0.2, context = CONTEXT[tier], timeout = 0, signal, onDelta,
 } = {}) {
   const signals = [signal, timeout ? AbortSignal.timeout(timeout) : null].filter(Boolean);
   const sig = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
@@ -206,7 +221,7 @@ export async function chat({
   const opts = { messages: msgs, maxTokens, temperature, signal: sig, onDelta };
   if (via === 'local' || (!via && localUsable())) {
     try {
-      const out = await chatLocal({ ...opts, model: model || localModel(tier) });
+      const out = await chatLocal({ ...opts, context, model: model || localModel(tier) });
       localOk = true;
       return out;
     } catch (err) {

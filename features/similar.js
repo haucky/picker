@@ -46,7 +46,7 @@ export async function embed(model, texts, url = localUrl()) {
     res = await fetch(url + '/api/embed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, input: texts }),
+      body: JSON.stringify({ model, input: texts, keep_alive: '1m' }),
     });
   } catch (err) {
     throw new Error(`Ollama unter ${url} nicht erreichbar – läuft der Server, ist OLLAMA_ORIGINS gesetzt und der Zugriff aufs lokale Netzwerk erlaubt? (${err.message})`);
@@ -183,6 +183,14 @@ const judged = new Map(); // „a\0b“ (sortiert, klein) → true/false
 
 const pairKey = (a, b) => [a.toLowerCase(), b.toLowerCase()].sort().join('\0');
 
+/** Gespeicherte Entscheidungen übernehmen ({ Schlüssel: true/false }, z. B. aus embeddings.json). */
+export function seedJudged(obj) {
+  for (const [k, v] of Object.entries(obj || {})) if (!judged.has(k)) judged.set(k, !!v);
+}
+
+/** Alle Entscheidungen zum Speichern. */
+export const judgedJSON = () => Object.fromEntries(judged);
+
 /** Schon entschieden? true/false oder undefined. */
 export const judgedSame = (a, b) => judged.get(pairKey(a, b));
 
@@ -194,7 +202,7 @@ export async function sameQuestion(a, b, { signal } = {}) {
   const key = pairKey(a, b);
   if (judged.has(key)) return judged.get(key);
   const text = await chat({
-    system: SAME_SYSTEM, purpose: 'judge', maxTokens: 4, temperature: 0, timeout: 30000, signal,
+    system: SAME_SYSTEM, purpose: 'judge', maxTokens: 4, temperature: 0, context: 512, timeout: 60000, signal,
     user: `Frage 1: ${a}?\nFrage 2: ${b}?\n\nFragen beide nach demselben, sodass dieselbe Antwort beide beantwortet? ` +
       'Nur dasselbe Thema oder dieselbe Person reicht nicht. Antworte mit JA oder NEIN.',
   });

@@ -6,12 +6,12 @@ import { exportName, setExportName } from './export.js';
 import {
   apiKey, setApiKey, chat, listModels, listLocalModels, TIERS, TIER_LABEL, DEFAULT_LOCAL_URL, DEFAULT_LOCAL,
   DEFAULT_TINFOIL, localOn, setLocalOn, localUrl, setLocalUrl, localModel, setLocalModel, tinfoilOn, setTinfoilOn,
-  tinfoilModel, setTinfoilModel,
+  tinfoilModel, setTinfoilModel, unloadLocal,
 } from './llm.js';
 import { PROMPTS_PATH, parsePrompts } from './prompts.js';
 import {
   FILE as EMBED_FILE, DEFAULT_MODEL, embedModel, setEmbedModel, parseStore, updateStore, similarPairs, sameQuestion,
-  judgedSame,
+  judgedSame, seedJudged, judgedJSON,
 } from './similar.js';
 
 const SHOW_ENTRIES = 30;
@@ -169,6 +169,8 @@ const MIN_SCORES = [0.95, 0.9, 0.85, 0.8, 0.75, 0.7];
 let simBox, simRunning = false;
 let simMin = 0.85;
 let simPairs = null; // Ergebnis der letzten Berechnung (alle ≥ 0,7)
+let simStore = null; // dazu der gespeicherte Stand (Vektoren, Entscheidungen des Sprachmodells)
+let simAbort = null; // AbortController der laufenden Prüfung
 
 function similarSection() {
   simBox = h('div', { class: 'sim-result' });
@@ -196,6 +198,8 @@ async function runSimilar(btn) {
   const model = embedModel();
   try {
     const store = parseStore(await core.readAppFile(EMBED_FILE), model);
+    seedJudged(store.judged); // schon geprüfte Paare (auch aus einem abgebrochenen Lauf)
+    simStore = store;
     const save = (st) => core.writeAppFile(EMBED_FILE, JSON.stringify(st));
     const t0 = Date.now();
     const { computed, total } = await updateStore(store, core.list(), {
@@ -217,23 +221,42 @@ async function runSimilar(btn) {
   }
 }
 
-/** Die angezeigten Paare (ab Schwelle) vom schnellen Sprachmodell prüfen lassen: dieselbe Frage oder nur verwandt. */
+/**
+ * Die angezeigten Paare (ab Schwelle) vom schnellen Sprachmodell prüfen lassen: dieselbe Frage oder nur verwandt.
+ * Schonend für den Rechner: vorher die anderen Modelle aus dem Speicher nehmen, eins nach dem anderen mit kleiner
+ * Pause, Zwischenstand alle 10 Paare speichern (ein Abbruch verliert nichts), jederzeit abbrechbar.
+ */
 async function judgePairs(btn, status) {
+  if (simAbort) { simAbort.abort(); return; } // zweiter Klick = Abbrechen
   if (simRunning) return;
   simRunning = true;
-  btn.disabled = true;
+  simAbort = new AbortController();
+  const { signal } = simAbort;
+  btn.textContent = 'Abbrechen';
   const title = (path) => core.get(path)?.title ?? '';
   const todo = simPairs.filter((p) => p.score >= simMin && judgedSame(title(p.a), title(p.b)) === undefined);
+  const save = () => { if (simStore) { simStore.judged = judgedJSON(); return core.writeAppFile(EMBED_FILE, JSON.stringify(simStore)); } };
   const t0 = Date.now();
+  let done = 0;
   try {
-    for (let i = 0; i < todo.length; i++) {
-      status.textContent = `Prüfe mit Sprachmodell … ${i + 1} / ${todo.length}`;
-      await sameQuestion(title(todo[i].a), title(todo[i].b));
+    status.textContent = 'Gebe Speicher frei …';
+    await unloadLocal(embedModel());
+    if (localModel('good') !== localModel('fast')) await unloadLocal(localModel('good'));
+    for (const p of todo) {
+      if (signal.aborted) break;
+      status.textContent = `Prüfe mit Sprachmodell … ${done + 1} / ${todo.length}`;
+      await sameQuestion(title(p.a), title(p.b), { signal });
+      done++;
+      if (done % 10 === 0) await save();
+      await new Promise((r) => setTimeout(r, 100)); // dem Rechner Luft lassen
     }
-    status.textContent = `${todo.length} Paare geprüft (${((Date.now() - t0) / 1000).toFixed(1)} s).`;
+    status.textContent = `${done} von ${todo.length} Paaren geprüft (${((Date.now() - t0) / 1000).toFixed(0)} s)` +
+      (done < todo.length ? ' – abgebrochen, Rest beim nächsten Mal.' : '.');
   } catch (err) {
-    status.textContent = 'Prüfen fehlgeschlagen: ' + err.message;
+    status.textContent = signal.aborted ? `Abgebrochen nach ${done} Paaren – Rest beim nächsten Mal.` : 'Prüfen fehlgeschlagen: ' + err.message;
   } finally {
+    try { await save(); } catch { /* Zwischenstand bleibt im Speicher */ }
+    simAbort = null;
     simRunning = false;
     renderPairs(status);
   }
