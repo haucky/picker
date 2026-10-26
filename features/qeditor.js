@@ -79,16 +79,22 @@ export function createIssues(jump) {
 
 /**
  * CodeMirror-Editor für ein Fragen-Dokument mit allem, was der Notiz-Editor auch kann (Links, Bilder, Tag-Vorschläge,
- * Korrektur, KI). opts: { parent, doc, placeholder, onChange, questionExtra, locked, onLocked, folder (für Bilder) }.
+ * Korrektur, KI). opts: { parent, doc, placeholder, onChange, questionExtra, locked, onLocked, folder (für Bilder),
+ * conflicts (siehe conflicts.js: Fragen, die es schon gibt) }.
  */
 export function createQuestionEditor(ui, opts) {
   const folder = () => (typeof opts.folder === 'function' ? opts.folder() : opts.folder) || '';
-  return createEditor({
+  const { conflicts } = opts;
+  const extra = conflicts
+    ? (q, line) => [...(opts.questionExtra ? opts.questionExtra(q, line) : []), ...conflicts.marks(q, line)]
+    : opts.questionExtra;
+  const cm = createEditor({
     parent: opts.parent,
     doc: opts.doc,
     placeholder: opts.placeholder,
     onChange: opts.onChange,
-    decorate: (text) => questionMarks(text, opts.questionExtra),
+    decorate: (text) => questionMarks(text, extra),
+    onCursorLine: conflicts ? (line) => conflicts.setActive(line) : undefined,
     openLink: (target) => ui.openLink(target),
     saveImage: ui.saveImage,
     spell: ui.spell,
@@ -100,4 +106,38 @@ export function createQuestionEditor(ui, opts) {
     // Bilder relativ zum Ordner der neuen bzw. bearbeiteten Notizen auflösen
     resolveImage: (link) => ui.resolveImage(link, folder() ? folder() + '/_.md' : '_.md'),
   });
+  conflicts?.attach(cm);
+  return cm;
+}
+
+/* ---------- Kleines Menü (z. B. am Punkt oder am „!“ einer Frage) ---------- */
+
+let menuEl = null;
+
+export function closeMenu() {
+  if (!menuEl) return;
+  menuEl.remove();
+  document.removeEventListener('pointerdown', menuEl._outside, true);
+  document.removeEventListener('keydown', menuEl._key, true);
+  menuEl = null;
+}
+
+/**
+ * Öffnet ein Menü unter `rect`; `fill(el)` setzt den Inhalt (und darf ihn später austauschen), `cls` = zusätzliche
+ * Klasse. Gibt das Element zurück.
+ */
+export function popMenu(rect, fill, cls = '') {
+  closeMenu();
+  const el = h('div', { class: 'qmenu' + (cls ? ' ' + cls : ''), role: 'menu' });
+  fill(el);
+  document.body.append(el);
+  const w = el.offsetWidth;
+  el.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
+  el.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - el.offsetHeight - 8)) + 'px';
+  el._outside = (e) => { if (!el.contains(e.target)) closeMenu(); };
+  el._key = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeMenu(); } };
+  document.addEventListener('pointerdown', el._outside, true);
+  document.addEventListener('keydown', el._key, true);
+  menuEl = el;
+  return el;
 }

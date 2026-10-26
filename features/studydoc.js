@@ -1,7 +1,7 @@
 // Study-Logik ohne DOM: alle TILs einer Vorlesung (VL = Datum in einem Stapel) als ein Fließtext-Dokument
 // und der Abgleich dieses Dokuments mit den Dateien (ändern, neu anlegen, löschen).
-import { parseFrontmatter, setFrontmatterFields, splitFrontmatter, parseTags } from '../core.js';
-import { inDeck, isConfig, dayOf, dayToIso, dayToTagDate, reviewState, setReviewState } from './srs.js';
+import { parseFrontmatter, setFrontmatterFields, splitFrontmatter, parseTags, addTagsToText } from '../core.js';
+import { inDeck, isConfig, dayOf, dayToIso, dayToTagDate, dayToGerman, reviewState, setReviewState, appendAnswer } from './srs.js';
 
 export const ORDER_FIELD = 'study-order';
 const TODO_RE = /(^|\s)(!{3,})/;
@@ -179,6 +179,17 @@ export function parseQuestion(line) {
 
 export const isQuestionLine = (line) => !!parseQuestion(line);
 
+/** Problem mit einem Fragen-Titel als Dateiname (Text) oder null. */
+export function titleProblem(title) {
+  const q = parseQuestion(title + '?');
+  if (!q || q.title !== title || q.tags.length) return 'Das ist keine gültige Frage (eine Zeile, „?“ nur am Ende)';
+  const bad = title.match(FORBIDDEN_RE);
+  if (bad) return `„${bad[0]}“ ist im Dateinamen nicht erlaubt`;
+  if (title.startsWith('.')) return 'Dateiname darf nicht mit „.“ beginnen';
+  if (title.length > MAX_TITLE) return `Frage zu lang für einen Dateinamen (max. ${MAX_TITLE} Zeichen)`;
+  return null;
+}
+
 /** Dokument aus Notizen (in dieser Reihenfolge); abweichende Tags stehen hinter der Frage. */
 export function buildDoc(notes, base) {
   if (!notes.length) return '';
@@ -306,7 +317,11 @@ export function newNoteText(tags, body, order, state = 'open') {
  *        renames: Map neuer Titel → alter Titel (optional; über „Umbenennen“: die Notiz zieht mit Frontmatter
  *        und Tags um, statt neu angelegt zu werden – der SR-Stand bleibt),
  *        existsHint: Zusatz zur Fehlermeldung, wenn es eine neue Datei schon gibt (optional),
- *        order: false = neue Notizen ohne study-order (z. B. Diary) }.
+ *        order: false = neue Notizen ohne study-order (z. B. Diary),
+ *        existing(title) → Notiz mit diesem Namen irgendwo im Vault (außer denen dieses Dokuments) oder null,
+ *        resolutions: Map Titel (klein) → 'merge' | 'here' | 'answer' (Entscheidung für Fragen, die es schon gibt) }.
+ * Neue Fragen, die es schon gibt: mit Entscheidung in `merges` ({ path (vorhandene Notiz), title, line, day, order,
+ * body, tags, action }), sonst ein Fehler.
  * Fragen unter einer Datumszeile mit anderem Datum bekommen dessen #date/… (und gehören danach zu einer anderen VL).
  * Gibt { errors, updates, creates, moves, deletes, redated } zurück; jede Änderung als { path, title, day, text? },
  * moves zusätzlich mit `from` (alter Pfad) und `oldTitle`; `redated` = Titel der Fragen mit geändertem Datum.
@@ -320,6 +335,7 @@ export function planSave(doc, originals, ctx) {
   const titles = new Set(items.map((it) => it.title));
   const used = new Set();
   const redated = [];
+  const merges = [];
   items.forEach((it, i) => {
     // Datumszeile mit dem Datum des Dokuments ändert nichts
     const day = it.day != null && it.day !== ctx.day ? it.day : null;
@@ -345,6 +361,11 @@ export function planSave(doc, originals, ctx) {
       const text = applyItem(o.text, it, i + 1, ctx.base, state);
       if (movesDay(o.text, day)) redated.push(it.title);
       if (text !== o.text) updates.push({ path: o.path, title: o.title, day: itemDay, text });
+    } else if (ctx.existing?.(it.title)) {
+      const ex = ctx.existing(it.title);
+      const action = ctx.resolutions?.get(it.title.toLowerCase());
+      if (action) merges.push({ path: ex.path, title: it.title, line: it.line, day: itemDay, order: i + 1, body: it.body, tags: it.tags, action });
+      else errors.push({ line: it.line, msg: `„${it.title}?“ gibt es schon (${ex.path}) – „!“ hinter der Frage antippen`, conflict: true });
     } else {
       const path = (ctx.folder ? ctx.folder + '/' : '') + it.title + '.md';
       if (day != null) redated.push(it.title);
@@ -354,9 +375,88 @@ export function planSave(doc, originals, ctx) {
   const deletes = originals.filter((o) => !used.has(o.path)).map((o) => ({ path: o.path, title: o.title }));
   const freed = new Set([...deletes, ...moves.map((m) => ({ path: m.from }))].map((d) => d.path.toLowerCase()));
   for (const c of [...creates, ...moves]) {
-    if (ctx.exists(c.path) && !freed.has(c.path.toLowerCase())) {
+    const ex = c.from && ctx.existing?.(c.title);
+    if (ex && ex.path.toLowerCase() !== c.path.toLowerCase() && !freed.has(ex.path.toLowerCase())) {
+      errors.push({ line: c.line, msg: `„${c.title}?“ gibt es schon (${ex.path}) – anders umbenennen` });
+    } else if (ctx.exists(c.path) && !freed.has(c.path.toLowerCase())) {
       errors.push({ line: c.line, msg: `„${c.path}“ gibt es schon im Vault` + (ctx.existsHint ?? ' (in einer anderen VL oder einem anderen Stapel)') });
     }
   }
-  return { errors, updates, creates, moves, deletes, redated };
+  return { errors, updates, creates, moves, deletes, redated, merges };
+}
+
+/* ---------- Fragen, die es schon gibt ---------- */
+
+const ANSWER_LINE_RE = /^::\d{2}\.\d{2}\.\d{4}::\s*$/;
+
+/** Inhalt einer Notiz ersetzen (Frontmatter und Tag-Zeile bleiben, study-order unverändert). */
+export function setContent(text, body) {
+  const nl = text.includes('\r\n') ? '\r\n' : '\n';
+  const { bom, front, head, content } = splitNote(text);
+  if (normBody(content) === normBody(body)) return text;
+  const b = normBody(body);
+  const h = head && !/\n$/.test(head) && b ? head + nl : head;
+  return bom + front + h + (b ? b.replace(/\n/g, nl) + nl : '');
+}
+
+/** Hängt `body` an den Inhalt an – vor den eigenen Antworten (::TT.MM.JJJJ::), damit es zur Rückseite gehört. */
+export function mergeContent(text, body, tags = []) {
+  const b = normBody(body);
+  if (b) {
+    const nl = text.includes('\r\n') ? '\r\n' : '\n';
+    const { bom, front, head, content } = splitNote(text);
+    const lines = content.replace(/\r\n?/g, '\n').split('\n');
+    const at = lines.findIndex((l) => ANSWER_LINE_RE.test(l));
+    const before = normBody((at < 0 ? lines : lines.slice(0, at)).join('\n'));
+    const after = at < 0 ? '' : lines.slice(at).join('\n').trimEnd();
+    const merged = (before ? before + '\n\n' : '') + b + (after ? '\n\n' + after : '');
+    const h = head && !/\n$/.test(head) ? head + nl : head;
+    text = bom + front + h + merged.replace(/\n/g, nl) + nl;
+  }
+  return tags.length ? addTagsToText(text, tags) : text;
+}
+
+/** Holt eine Notiz in die VL `day` mit den Grund-Tags `base`: #date/… ersetzt, fehlende Grund-Tags ergänzt, Reihenfolge. */
+export function moveToDay(text, base, day, order) {
+  const target = day == null ? base.filter((t) => !isDateTag(t)) : baseForDay(base, day);
+  const lower = new Set(target.map((t) => t.toLowerCase()));
+  const tags = tagLineTags(text).filter((t) => !isDateTag(t) && !lower.has(t.toLowerCase()));
+  text = setTagLine(text, [...target, ...tags]);
+  return order == null ? text : setFrontmatterFields(text, { [ORDER_FIELD]: String(order) });
+}
+
+// Frage im Diary noch einmal gestellt (statt eine alte Frage nur neu zu beantworten): Daten in der Frontmatter.
+export const ASKED_AGAIN_FIELD = 'asked-again';
+
+/** Tage, an denen die Frage noch einmal gestellt wurde (ISO-Daten). */
+export function askedAgain(text) {
+  const v = String(parseFrontmatter(text)[ASKED_AGAIN_FIELD] || '');
+  return v.replace(/^\[|\]$/g, '').split(',').map((x) => x.trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x));
+}
+
+/** Hängt den Text als Antwort ::TT.MM.JJJJ:: an (Listen bleiben, wie sie sind) und vermerkt „noch einmal gestellt“. */
+export function appendAsAnswer(text, body, day, tags = []) {
+  const b = normBody(body);
+  if (b) {
+    if (/^\s*(?:[-*+]|\d+[.)])\s/.test(b)) {
+      const nl = text.includes('\r\n') ? '\r\n' : '\n';
+      text = text.replace(/\s+$/, '') + nl + nl + `::${dayToGerman(day)}::` + nl + b.replace(/\n/g, nl) + nl;
+    } else {
+      text = appendAnswer(text, b, day);
+    }
+  }
+  const days = askedAgain(text);
+  const iso = dayToIso(day);
+  if (!days.includes(iso)) text = setFrontmatterFields(text, { [ASKED_AGAIN_FIELD]: `[${[...days, iso].sort().join(', ')}]` });
+  return tags.length ? addTagsToText(text, tags) : text;
+}
+
+/**
+ * Führt eine Entscheidung aus planSave().merges an der vorhandenen Notiz aus: 'merge' (Inhalt anhängen), 'here'
+ * (anhängen und in die VL `base`/Tag holen), 'answer' (als Antwort anhängen, Diary).
+ */
+export function applyMerge(text, m, base) {
+  if (m.action === 'answer') return appendAsAnswer(text, m.body, m.day, m.tags);
+  text = mergeContent(text, m.body, m.tags);
+  return m.action === 'here' ? moveToDay(text, base, m.day, m.order) : text;
 }

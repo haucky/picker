@@ -684,6 +684,41 @@ img.img-big { max-width: 100%; }
 .qmenu-note, .qmenu-label { color: var(--muted); font-size: .85rem; padding: 6px 10px; }
 .qmenu-row { display: flex; justify-content: flex-end; gap: 4px; }
 
+/* Fragen, die es schon gibt (conflicts.js): unterkringelt, „!“ dahinter, Menü mit Vorschau, Pop-up */
+.md-editor .cm-conflict { text-decoration: underline wavy var(--orange); text-underline-offset: 3px; }
+.md-editor .cm-badge {
+  display: inline-block; margin-left: 6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  font-size: .75rem; font-weight: 700; line-height: 20px; text-align: center; vertical-align: 2px; cursor: pointer;
+  user-select: none; -webkit-user-select: none;
+}
+.md-editor .cm-badge.open { background: var(--orange); color: var(--bg); }
+.md-editor .cm-badge.resolved { background: transparent; color: var(--green); border: 1px solid var(--green); line-height: 18px; }
+.qconf-menu { width: min(340px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow: auto; }
+.qconf-preview { margin: 0 6px 6px; padding: 8px 10px; border-radius: 8px; background: var(--bg); font-size: .85rem; display: flex; flex-direction: column; gap: 4px; }
+.qconf-where { color: var(--muted); font-size: .78rem; }
+.qconf-body { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); max-height: 8.5em; overflow: hidden; }
+.qconf-answer { color: var(--text-2); overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
+.qconf-answer span { color: var(--magenta); font-weight: 600; }
+.qpop-back {
+  position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .45);
+  display: flex; align-items: flex-start; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 12px 12px;
+}
+.qpop {
+  width: min(640px, 100%); max-height: calc(100dvh - 32px); overflow: auto; display: flex; flex-direction: column; gap: 8px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px 14px; box-shadow: 0 10px 40px rgba(0, 0, 0, .35);
+}
+.qpop-head { display: flex; align-items: center; gap: 8px; }
+.qpop-where { flex: 1; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
+.qpop-title {
+  width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--accent);
+  font: inherit; font-weight: 600; font-size: 1.05rem; padding: 6px 2px; outline: none;
+}
+.qpop-title:focus { border-bottom-color: var(--accent); }
+.qpop-editor { min-height: 120px; }
+.qpop-err { color: var(--red); font-size: .85rem; }
+.qpop-row { display: flex; align-items: center; gap: 8px; }
+.qpop-gap { flex: 1; }
+
 /* Zweizeiliger Titel in der Kopfleiste (VL-Editor): Stapel, darunter Datum · Zähler */
 .bar-title { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 .bar-title h1 { flex: none; font-size: 1.05rem; line-height: 1.25; }

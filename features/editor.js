@@ -280,11 +280,31 @@ class DotWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
+/** Kleines Badge im Text (z. B. „!“ hinter einer Frage, die es schon gibt): Klick ruft onClick(Zeilenindex, Rechteck) auf. */
+class BadgeWidget extends WidgetType {
+  constructor(text, cls, title, onClick) { super(); this.text = text; this.cls = cls; this.title = title; this.onClick = onClick; }
+  eq(o) { return o.text === this.text && o.cls === this.cls && o.title === this.title && o.onClick === this.onClick; }
+  toDOM(view) {
+    const b = document.createElement('span');
+    b.className = 'cm-badge ' + this.cls;
+    b.textContent = this.text;
+    b.title = this.title;
+    b.setAttribute('role', 'button');
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.onClick(view.state.doc.lineAt(view.posAtDOM(b)).number - 1, b.getBoundingClientRect());
+    });
+    return b;
+  }
+  ignoreEvent() { return true; }
+}
+
 const refreshMarks = StateEffect.define();
 
 /**
- * `decorate(text)` → [{ line (0-basiert), class } | { line, from, to, class } | { line, dot: { class, title, onClick, onMenu } }]
- * (from/to = Spalten). Wird bei jeder Änderung (und bei refresh()) für das ganze Dokument neu berechnet (für
+ * `decorate(text)` → [{ line (0-basiert), class } | { line, from, to, class } | { line, dot: { class, title, onClick, onMenu } }
+ * | { line, badge: { at (Spalte), text, class, title, onClick } }] (from/to = Spalten). Wird bei jeder Änderung (und bei refresh()) für das ganze Dokument neu berechnet (für
  * Dokumente in Notizgröße unkritisch).
  */
 function extraMarks(decorate) {
@@ -300,6 +320,7 @@ function extraMarks(decorate) {
         if (d.line >= doc.lines) continue;
         const l = doc.line(d.line + 1);
         if (d.dot) out.push(Decoration.widget({ widget: new DotWidget(d.dot.class, d.dot.title, d.dot.onClick, d.dot.onMenu), side: -1 }).range(l.from));
+        else if (d.badge) out.push(Decoration.widget({ widget: new BadgeWidget(d.badge.text, d.badge.class, d.badge.title, d.badge.onClick), side: 1 }).range(l.from + Math.min(d.badge.at, l.length)));
         else if (d.from == null) out.push(Decoration.line({ class: d.class }).range(l.from));
         else if (d.to > d.from) out.push(Decoration.mark({ class: d.class }).range(l.from + d.from, l.from + Math.min(d.to, l.length)));
       }
@@ -802,6 +823,7 @@ function continueList(view) {
  *         spell (siehe spell.js, nur am Desktop übergeben), ai (siehe aicorrect.js, nur am Desktop),
  *         prompt (siehe prompts.js, nur am Desktop), tags (siehe tags.js: Tag-Vorschläge),
  *         locked(text) → [{ from, to }] + onLocked() (gesperrte Stellen, siehe lockedRanges),
+ *         onCursorLine(line) (Zeile mit dem Cursor hat gewechselt, -1 = ohne Fokus),
  *         saveImage(file) → Promise<Markdown-Link> }
  * Gibt { view, value, set(text), focus(), jumpToLine(i), refresh(), destroy() } zurück.
  */
@@ -816,6 +838,7 @@ export function createEditor(opts) {
     urls.clear();
   };
 
+  let cursorLine = -1;
   const extensions = () => [
     markdownLang,
     history(),
@@ -839,6 +862,12 @@ export function createEditor(opts) {
     opts.locked ? lockedRanges(opts.locked, opts.onLocked) : [],
     opts.saveImage ? imagePaste(opts.saveImage) : [],
     EditorView.updateListener.of((u) => { if (u.docChanged) opts.onChange?.(u.state.doc.toString()); }),
+    // Zeile mit dem Cursor (-1 = Editor ohne Fokus), z. B. um eine Frage erst nach dem Verlassen der Zeile zu prüfen
+    opts.onCursorLine ? EditorView.updateListener.of((u) => {
+      if (!u.selectionSet && !u.docChanged && !u.focusChanged) return;
+      const line = u.view.hasFocus ? u.state.doc.lineAt(u.state.selection.main.head).number - 1 : -1;
+      if (line !== cursorLine) { cursorLine = line; opts.onCursorLine(line); }
+    }) : [],
   ];
 
   const view = new EditorView({

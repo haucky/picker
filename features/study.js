@@ -1,11 +1,13 @@
 // Feature: Vorlesungen durcharbeiten. Stapel aus Review.md → VLs (Datum) → alle TILs einer VL als ein
 // Fließtext-Dokument („Frage?“-Zeile + Inhalt). Speichern ändert, legt an und verschiebt in den Papierkorb.
 import { h, stableView } from './dom.js';
-import { createQuestionEditor, createIssues, questionLines } from './qeditor.js';
+import { createQuestionEditor, createIssues, questionLines, popMenu, closeMenu } from './qeditor.js';
+import { createConflicts } from './conflicts.js';
 import { printVL, exportName, withoutTodos } from './export.js';
 import { CONFIG_PATH, parseDecks, inDeck, isConfig, today, dayToGerman, reviewState, nextReviewState, countStates } from './srs.js';
 import {
   todos, todoItems, todoText, groupByDay, dayOfNote, PRIO_LABEL, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
+  applyMerge,
 } from './studydoc.js';
 
 const DRAFT_PREFIX = 'study-draft:';
@@ -157,7 +159,7 @@ function loadDraft(key) {
 function storeDraft() {
   try {
     if (!isDirty()) localStorage.removeItem(ed.draftKey);
-    else localStorage.setItem(ed.draftKey, JSON.stringify({ text: ed.cm.value, base: ed.base, states: Object.fromEntries(ed.states), renames: Object.fromEntries(ed.renames) }));
+    else localStorage.setItem(ed.draftKey, JSON.stringify({ text: ed.cm.value, base: ed.base, states: Object.fromEntries(ed.states), renames: Object.fromEntries(ed.renames), conflicts: ed.conflicts.toJSON() }));
   } catch { /* egal */ }
 }
 function dropDraft(key) {
@@ -210,6 +212,14 @@ async function openVL(deck, day, focus, btn) {
     tags,
     issues: roundtripIssues(originals, tags),
   };
+  // Fragen, die es woanders im Vault schon gibt (die TILs dieser VL selbst zählen nicht)
+  ed.conflicts = createConflicts({
+    ui, mode: 'vl',
+    exclude: (n) => !!ed && ed.originals.some((o) => o.path === n.path),
+    rename: (oldTitle, next) => renameQuestion(oldTitle, next),
+    onChange: () => { if (ed?.cm) { update(); storeDraft(); } },
+  });
+  if (restore) ed.conflicts.load(draft.conflicts);
   history.pushState({ study: 'edit' }, '');
   document.body.classList.add('study-editing');
   listEl.hidden = true;
@@ -259,6 +269,7 @@ function renderEditor(text) {
     locked: lockedQuestions,
     onLocked: () => lockedHint(),
     folder: () => ed?.folder,
+    conflicts: ed.conflicts,
   });
   update();
 }
@@ -276,7 +287,7 @@ function update() {
   const parsed = parseDoc(text);
   const open = parsed.items.filter((it) => stateOf(it.title) === 'open').length;
   ed.count.textContent = (open ? `${open} offen · ` : '') + plural(parsed.items.length, 'Frage', 'Fragen');
-  ed.issuesBox.show(parsed);
+  ed.issuesBox.show({ ...parsed, errors: [...parsed.errors, ...ed.conflicts.issues(parsed.items)] });
   ed.save.disabled = busy || !isDirty();
 }
 
@@ -326,8 +337,9 @@ function jumpTo({ title, todo }) {
 const isDirty = () => !!ed && !!ed.cm && (ed.cm.value !== ed.base || statesDiffer(ed.states, ed.statesBase));
 
 function closeEditor({ discard = false } = {}) {
-  closeQuestionMenu();
+  closeMenu();
   if (discard) dropDraft(ed.draftKey);
+  ed.conflicts.destroy();
   ed.cm?.destroy();
   ed = null;
   document.body.classList.remove('study-editing');
@@ -382,29 +394,20 @@ function questionBlock(title) {
   return { line: start, title, text: title + '?' + (body ? '\n' + body : ''), end };
 }
 
-let menuEl = null;
-function closeQuestionMenu() {
-  if (!menuEl) return;
-  menuEl.remove();
-  document.removeEventListener('pointerdown', menuEl._outside, true);
-  document.removeEventListener('keydown', menuEl._key, true);
-  menuEl = null;
-}
-
 /** Kontextmenü am Punkt einer Frage: oberste 3 Prompts aus Prompts.md, eigener Prompt, Umbenennen. */
 function openQuestionMenu(line, rect) {
   if (!ed) return;
-  closeQuestionMenu();
+  closeMenu();
   const q = parseQuestion(ed.cm.value.split('\n')[line] || '');
   if (!q) return;
   const title = q.title;
-  const el = h('div', { class: 'qmenu', role: 'menu' });
+  let el;
   const ai = ui.prompts && ui.prompts.available();
   const runPrompt = (input) => {
     if (!input.trim()) return;
     const block = questionBlock(title);
     if (!block) return;
-    closeQuestionMenu();
+    closeMenu();
     ui.prompts.run({
       input, text: block.text,
       // ans Ende der Frage (im dann aktuellen Text, falls sich inzwischen etwas verschoben hat)
@@ -431,22 +434,13 @@ function openQuestionMenu(line, rect) {
   };
   const showRename = () => {
     const input = h('input', { type: 'text', class: 'qmenu-input', value: title, 'aria-label': 'Neue Frage' });
-    const ok = () => { if (renameQuestion(title, input.value)) closeQuestionMenu(); };
+    const ok = () => { if (renameQuestion(title, input.value)) closeMenu(); };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ok(); } });
     el.replaceChildren(h('div', { class: 'qmenu-label' }, 'Frage umbenennen (Lernstand bleibt)'), input,
-      h('div', { class: 'qmenu-row' }, item('Abbrechen', closeQuestionMenu), item('Umbenennen', ok, { class: 'qmenu-item accent' })));
+      h('div', { class: 'qmenu-row' }, item('Abbrechen', closeMenu), item('Umbenennen', ok, { class: 'qmenu-item accent' })));
     setTimeout(() => { input.focus(); input.select(); });
   };
-  showMain();
-  document.body.append(el);
-  const w = el.offsetWidth;
-  el.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
-  el.style.top = Math.min(rect.bottom + 6, window.innerHeight - el.offsetHeight - 8) + 'px';
-  el._outside = (e) => { if (!el.contains(e.target)) closeQuestionMenu(); };
-  el._key = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeQuestionMenu(); } };
-  document.addEventListener('pointerdown', el._outside, true);
-  document.addEventListener('keydown', el._key, true);
-  menuEl = el;
+  popMenu(rect, (box) => { el = box; showMain(); });
 }
 
 /** Benennt eine Frage im Text um; beim Speichern zieht die Notiz mit Frontmatter (SR-Stand, Status) und Tags um. */
@@ -500,14 +494,17 @@ async function save() {
     return false;
   };
   const states = new Map(ed.states);
-  const plan = planSave(text, ed.originals, { folder: ed.folder, base: ed.tags, day: ed.day, exists, states, renames: ed.renames });
+  const plan = planSave(text, ed.originals, {
+    folder: ed.folder, base: ed.tags, day: ed.day, exists, states, renames: ed.renames,
+    existing: ed.conflicts.existing, resolutions: ed.conflicts.resolutions,
+  });
   if (plan.errors.length) {
     update();
     ui.toast(plan.errors[0].msg + (plan.errors.length > 1 ? ` (+${plan.errors.length - 1})` : ''), 4000);
     return;
   }
-  const { updates, creates, moves, deletes } = plan;
-  if (!updates.length && !creates.length && !moves.length && !deletes.length) {
+  const { updates, creates, moves, deletes, merges } = plan;
+  if (!updates.length && !creates.length && !moves.length && !deletes.length && !merges.length) {
     ed.base = text;
     ed.statesBase = states;
     dropDraft(ed.draftKey);
@@ -535,7 +532,7 @@ async function save() {
     if (changed.length && !confirm('Seit dem Öffnen außerhalb geändert:\n\n' + changed.map((t) => `• ${t}`).join('\n') +
       '\n\nTrotzdem mit deinem Stand überschreiben?')) return;
 
-    const done = { updated: 0, created: 0, moved: 0, deleted: 0 };
+    const done = { updated: 0, created: 0, moved: 0, deleted: 0, merged: 0 };
     const fail = [];
     // Erst löschen (frei gewordene Namen, z. B. bei geänderter Groß-/Kleinschreibung), dann ändern, dann anlegen.
     for (const d of deletes) {
@@ -569,6 +566,15 @@ async function save() {
         fail.push(`${u.title}: ${err.message}`);
       }
     }
+    // Zusammenführen mit Fragen, die es schon gibt (andere VLs): an die vorhandene Notiz anhängen
+    for (const m of merges) {
+      try {
+        await core.update(m.path, (cur) => applyMerge(cur, m, ed.tags));
+        done.merged++;
+      } catch (err) {
+        fail.push(`${m.title}: ${err.message}`);
+      }
+    }
     for (const c of creates) {
       try {
         await core.create(c.path, c.text);
@@ -580,7 +586,7 @@ async function save() {
     }
     const summary = [
       done.updated && `${done.updated} geändert`, done.created && `${done.created} neu`, done.moved && `${done.moved} umbenannt`,
-      done.deleted && `${done.deleted} gelöscht`,
+      done.deleted && `${done.deleted} gelöscht`, done.merged && `${done.merged} zusammengeführt`,
     ].filter(Boolean).join(', ');
     if (fail.length) {
       alert('Nicht alles wurde gespeichert' + (summary ? ` (${summary})` : '') + ':\n\n' + fail.join('\n'));
@@ -588,16 +594,18 @@ async function save() {
       ed.base = text;
       ed.statesBase = states;
       ed.renames = new Map();
+      ed.conflicts.clear();
       dropDraft(ed.draftKey);
       ed.issues = [];
-      if (plan.redated.length) {
-        // Fragen mit anderem Datum gehören jetzt zu anderen VLs: VL neu aufbauen
+      if (plan.redated.length || merges.length) {
+        // Fragen mit anderem Datum gehören jetzt zu anderen VLs, zusammengeführte stehen in der vorhandenen Notiz
+        // (bzw. sind mit „hierher holen“ jetzt Teil dieser VL): VL neu aufbauen
         ed.originals = loadOriginals(ed.deck, ed.day);
         ed.base = buildDoc(ed.originals, ed.tags);
         ed.states = new Map(ed.originals.map((o) => [o.title, reviewState(o.text)]));
         ed.statesBase = new Map(ed.states);
         ed.cm.set(ed.base);
-        ui.toast(`Gespeichert ✓ ${summary} – ${plural(plan.redated.length, 'Frage', 'Fragen')} an einem anderen Tag (andere VL)`, 5000);
+        ui.toast(`Gespeichert ✓ ${summary}` + (plan.redated.length ? ` – ${plural(plan.redated.length, 'Frage', 'Fragen')} an einem anderen Tag (andere VL)` : ''), 5000);
       } else {
         ui.toast(`Gespeichert ✓ ${summary}`);
       }

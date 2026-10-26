@@ -1,11 +1,13 @@
 // Diary → Schreiben: neue Einträge (TILs) im selben Fragen-Editor wie eine VL (qeditor.js): „Frage?“ + Inhalt,
 // mehrere auf einmal. Neue Einträge bekommen #life/diary und #date/… von heute; eine Zeile „TT.MM.JJJJ“ legt die
 // folgenden an diesem Tag an. Optional ein festes Intervall (Chips oder #review/… hinter der Frage), dann auch
-// #reviewed/… mit dem Tag des Eintrags. Hier wird nur angelegt, nichts geändert oder gelöscht; kein Review-Status.
+// #reviewed/… mit dem Tag des Eintrags. Gibt es eine Frage schon, kann sie als Antwort an den vorhandenen Eintrag
+// gehängt werden (conflicts.js; vermerkt als „noch einmal gefragt“). Sonst wird nur angelegt; kein Review-Status.
 import { parseTags } from '../core.js';
 import { h } from './dom.js';
-import { createQuestionEditor, createIssues } from './qeditor.js';
-import { parseDoc, planSave } from './studydoc.js';
+import { createQuestionEditor, createIssues, questionLines } from './qeditor.js';
+import { createConflicts } from './conflicts.js';
+import { parseDoc, planSave, applyMerge, titleProblem } from './studydoc.js';
 import {
   today, dayToTagDate, dayToGerman, fixedInterval, setFixedInterval, reviewedDay, setReviewed, sameInterval,
   formatFixed, intervalTag,
@@ -14,10 +16,11 @@ import {
 export const DIARY_TAG = 'life/diary';
 const DRAFT_KEY = 'diary-write-draft';
 const IV_KEY = 'diary-write-interval';
+const RES_KEY = 'diary-write-conflicts';
 const CHOICES = [null, ...[[1, 'd'], [1, 'w'], [1, 'm'], [2, 'm'], [3, 'm'], [1, 'y']].map(([n, unit]) => ({ n, unit }))];
 
 let ui, core, root;
-let cm, issues, saveBtn, countEl, infoEl, chipsEl;
+let cm, issues, saveBtn, countEl, infoEl, chipsEl, conflicts;
 let interval = null; // Intervall für alle neuen Einträge (null = keins)
 let busy = false;
 
@@ -49,14 +52,19 @@ function renderChips() {
 
 function update() {
   const parsed = parseDoc(cm.value);
-  issues.show(parsed);
+  issues.show({ ...parsed, errors: [...parsed.errors, ...conflicts.issues(parsed.items)] });
   countEl.textContent = parsed.items.length ? plural(parsed.items.length, 'Eintrag', 'Einträge') : '';
   saveBtn.disabled = busy || !parsed.items.length;
 }
 
 let raf = 0;
-function onInput() {
+function storeDraft() {
   store(DRAFT_KEY, cm.value.trim() ? cm.value : null);
+  store(RES_KEY, conflicts.resolutions.size ? JSON.stringify(conflicts.toJSON()) : null);
+}
+
+function onInput() {
+  storeDraft();
   if (!raf) raf = requestAnimationFrame(() => { raf = 0; update(); });
 }
 
@@ -92,38 +100,75 @@ async function save() {
     for (const k of core.notes.keys()) if (k.toLowerCase() === p) return true;
     return false;
   };
-  const plan = planSave(text, [], { folder: '', base: baseTags(day), day, exists, existsHint: '', order: false });
+  const plan = planSave(text, [], {
+    folder: '', base: baseTags(day), day, exists, existsHint: '', order: false,
+    existing: conflicts.existing, resolutions: conflicts.resolutions,
+  });
   if (plan.errors.length) {
     update();
     ui.toast(plan.errors[0].msg + (plan.errors.length > 1 ? ` (+${plan.errors.length - 1})` : ''), 4000);
     return;
   }
-  if (!plan.creates.length) return;
+  const { creates, merges } = plan;
+  if (!creates.length && !merges.length) return;
   busy = true;
   saveBtn.disabled = true;
   const fail = [];
   try {
-    for (const c of plan.creates) {
+    const failed = new Set();
+    let stop = false;
+    for (const c of creates) {
       try {
+        if (stop) throw new Error('nicht versucht');
         await core.create(c.path, withInterval(c.text, c.day ?? day));
       } catch (err) {
+        failed.add(c.title);
         fail.push(`${c.title}: ${err.message}`);
-        if (err.name === 'NotAllowedError') break; // kein Zugriff: Rest gar nicht erst versuchen
+        if (err.name === 'NotAllowedError') stop = true; // kein Zugriff: Rest gar nicht erst versuchen
       }
     }
-    const failed = new Set(plan.creates.filter((c) => !core.get(c.path)).map((c) => c.title));
-    const ok = plan.creates.length - failed.size;
+    // als Antwort an vorhandene Einträge hängen
+    for (const m of merges) {
+      try {
+        if (stop) throw new Error('nicht versucht');
+        await core.update(m.path, (cur) => applyMerge(cur, m));
+      } catch (err) {
+        failed.add(m.title);
+        fail.push(`${m.title}: ${err.message}`);
+        if (err.name === 'NotAllowedError') stop = true;
+      }
+    }
+    const created = creates.length - creates.filter((c) => failed.has(c.title)).length;
+    const appended = merges.length - merges.filter((m) => failed.has(m.title)).length;
+    const summary = [created && plural(created, 'neuer Eintrag', 'neue Einträge'), appended && `${appended} als Antwort angehängt`]
+      .filter(Boolean).join(', ');
     if (failed.size) {
-      cm.set(keepOnly(text, failed, day)); // nicht angelegte bleiben im Editor
-      alert(`${plural(ok, 'Eintrag', 'Einträge')} angelegt, nicht angelegt:\n\n` + (fail.join('\n') || [...failed].join('\n')));
+      cm.set(keepOnly(text, failed, day)); // was nicht gespeichert wurde, bleibt im Editor
+      alert(`Nicht alles wurde gespeichert${summary ? ` (${summary})` : ''}:\n\n` + fail.join('\n'));
     } else {
       cm.set('');
-      ui.toast(`Gespeichert ✓ ${plural(ok, 'neuer Eintrag', 'neue Einträge')}`);
+      conflicts.clear();
+      ui.toast(`Gespeichert ✓ ${summary}`);
     }
+    storeDraft();
   } finally {
     busy = false;
     update();
   }
+}
+
+/** Frage im Text umformulieren (Menü am „!“). */
+function renameQuestion(oldTitle, next) {
+  const problem = titleProblem(next);
+  if (problem) { ui.toast(problem, 4000); return false; }
+  const lines = cm.value.split('\n');
+  const qs = questionLines(lines);
+  if (qs.some((q) => q.title === next)) { ui.toast('Diese Frage steht schon im Text', 4000); return false; }
+  const hit = qs.find((q) => q.title === oldTitle);
+  if (!hit) return true;
+  const from = lines.slice(0, hit.line).reduce((n, l) => n + l.length + 1, 0);
+  cm.view.dispatch({ changes: { from, to: from + oldTitle.length, insert: next } });
+  return true;
 }
 
 /* ---------- Modul ---------- */
@@ -145,6 +190,12 @@ export default {
     chipsEl = h('div', { class: 'dw-chips' });
     const host = h('div', { class: 'md-editor', 'aria-label': 'Neue Diary-Einträge' });
     issues = createIssues((line) => cm.jumpToLine(line));
+    conflicts = createConflicts({
+      ui, mode: 'diary',
+      rename: renameQuestion,
+      onChange: () => { if (cm) { update(); storeDraft(); } },
+    });
+    try { conflicts.load(JSON.parse(load(RES_KEY) || '[]')); } catch { /* egal */ }
     root.classList.add('diary-write');
     root.append(
       h('div', { class: 'dw-head' }, h('h2', { class: 'section' }, 'Neue Einträge'), countEl, saveBtn),
@@ -157,6 +208,7 @@ export default {
       placeholder: 'Was war heute?\n- …\n\nNoch eine Frage? #diary/…\n- …\n\nTT.MM.JJJJ (folgende an diesem Tag)',
       onChange: onInput,
       folder: '',
+      conflicts,
     });
     document.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's' && !root.hidden && root.offsetParent) { e.preventDefault(); save(); }
