@@ -530,6 +530,24 @@ export const core = {
     if (attachments.index) attachments.index.set(k, [...(attachments.index.get(k) || []), path]);
   },
 
+  /** App-Datei in .picker/ (z. B. Embeddings) als Text lesen; null, wenn es sie nicht gibt. */
+  async readAppFile(name) {
+    try {
+      const dir = await this.vault.getDirectoryHandle(CHANGE_LOG_DIR);
+      return await (await (await dir.getFileHandle(name)).getFile()).text();
+    } catch (err) {
+      if (err.name === 'NotFoundError') return null;
+      throw err;
+    }
+  },
+
+  /** App-Datei in .picker/ schreiben (Ordner und Datei werden bei Bedarf angelegt). */
+  async writeAppFile(name, text) {
+    await this.requireAccess();
+    const dir = await this.vault.getDirectoryHandle(CHANGE_LOG_DIR, { create: true });
+    await write(await dir.getFileHandle(name, { create: true }), text);
+  },
+
   /** Gibt es die Datei (beliebiger Typ)? */
   async exists(path) {
     try { await this.fileHandle(path); return true; } catch { return false; }

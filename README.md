@@ -223,9 +223,28 @@ Damit die Suche schnell ist, hält die App eine Kopie aller Notizen im Browser-S
 
 - **Name:** steht beim PDF-Export einer VL unter dem Titel (wird nur im Browser gespeichert).
 - **KI:** eigener Tinfoil-API-Key für alle KI-Funktionen (nur im Browser gespeichert) mit **Testen**, Modell für die Korrektur und für Prompts, gefundene Abkürzungen aus `Prompts.md`.
+- **Ähnliche Fragen (Test):** siehe unten.
 - **Darstellung** (Automatisch / Hell / Dunkel).
 - **Abgleich:** wann und wie zuletzt abgeglichen wurde, mit **Jetzt abgleichen** und **Komplett abgleichen**.
 - Darunter die letzten Einträge des Plugin-Logs (zur Kontrolle, ob das Plugin läuft).
+
+### Ähnliche Fragen (Test)
+
+Findet Fragen, die dasselbe meinen, aber anders heißen (z. B. „Was ist ein Equi-Join?“ ↔ „Wozu ein Join mit Gleichheitsbedingung?“). Dafür bekommt jede Frage (nur der Dateiname, nicht der Inhalt) einen Vektor von einem Embedding-Modell, das **lokal am Computer** in [Ollama](https://ollama.com) läuft – nichts geht ins Internet. Die Vektoren stehen in `.picker/embeddings.json` im Vault (gekürzt und kompakt gespeichert, wenige MB; synct mit). Beim nächsten Mal werden nur neue und umbenannte Fragen berechnet; bei einem anderen Modell alle neu (Vektoren verschiedener Modelle sind nicht vergleichbar).
+
+**Settings → Ähnliche Fragen → Berechnen & vergleichen** zeigt die ähnlichsten Fragenpaare (Schwelle wählbar, Fragen antippen öffnet sie). Noch ein Test: im Editor erscheinen ähnliche Fragen (noch) nicht.
+
+**Einrichtung (Mac, einmalig):**
+
+1. Ollama installieren: App von [ollama.com/download](https://ollama.com/download) oder `brew install ollama`.
+2. Modell laden (Terminal): `ollama pull qwen3-embedding:0.6b` (~600 MB–1,2 GB). Größere: `qwen3-embedding:4b`, `qwen3-embedding:8b` – Name dann in Settings unter „Embedding-Modell“ eintragen.
+3. Ollama erlauben, Anfragen von der App anzunehmen (sonst blockt der Browser):
+   - mit der Ollama-App: `launchctl setenv OLLAMA_ORIGINS "https://oma.app"`, dann die Ollama-App beenden und neu starten (gilt bis zum Neustart des Macs; danach wiederholen oder in ein Login-Skript schreiben);
+   - ohne App: Ollama-App beenden und `OLLAMA_ORIGINS="https://oma.app" ollama serve` im Terminal laufen lassen.
+4. Prüfen: `curl http://localhost:11434/api/embed -d '{"model":"qwen3-embedding:0.6b","input":["Was ist ein Join?"]}'` – liefert eine lange Zahlenliste.
+5. In der App **Berechnen & vergleichen**. Chrome fragt beim ersten Mal, ob die Seite auf Geräte im lokalen Netzwerk zugreifen darf → **Zulassen** (sonst „nicht erreichbar“; zurücksetzen über das Schloss-Symbol neben der Adresse → Website-Einstellungen).
+
+Server-Adresse (Standard `http://localhost:11434`) und Modell (Standard `qwen3-embedding:0.6b`) sind in Settings änderbar. Ollama muss nur zum Berechnen laufen.
 
 ## Obsidian-Plugin „Picker Changelog“
 
@@ -263,6 +282,7 @@ In nicht unterstützten Browsern zeigt die App einen entsprechenden Hinweis.
 - `core.js` – Datenschicht: Vault-Zugriff, Zwischenspeicher (IndexedDB), Abgleich, CRUD (`read`, `create`, `update`, `remove`), Auslesen von Tags/Datum, Events (`change`, `status`).
 - `app.js` – Rahmen: Startseite, Tab-Leiste, gemeinsamer Editor.
 - `features/srs.js` – Review-Logik ohne DOM (Algorithmus, feste Intervalle, `Review.md`); `features/markdown.js` – Markdown-Renderer für die Rückseite.
+- `features/similar.js` – ähnliche Fragen: Embeddings über Ollama, `.picker/embeddings.json`, Paare finden (Oberfläche in Settings).
 - `features/conflicts.js` – Fragen, die es schon gibt: Erkennen, Optionen, Link einfügen; `features/peek.js` – Nebenfenster zum Bearbeiten einer vorhandenen Notiz (Frage, Tags, Inhalt).
 - `features/qeditor.js` – gemeinsamer Fragen-Editor (Markierungen, Fehler/Hinweise) für den VL-Editor (Study) und Diary → Schreiben; die Logik dazu (Fragen, Datumszeilen, Speichern planen) in `features/studydoc.js`.
 - `features/home.js` – Startbildschirm (Suche aus `features/search.js`, wichtige Todos); weitere Bereiche als eigene Abschnitte dort.
