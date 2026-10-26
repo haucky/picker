@@ -706,6 +706,13 @@ img.img-big { max-width: 100%; }
   user-select: none; -webkit-user-select: none;
 }
 .md-editor .cm-badge.open { background: var(--orange); color: var(--bg); }
+.md-editor .cm-badge.checking {
+  min-width: 0; width: 12px; height: 12px; padding: 0; vertical-align: -1px; border-radius: 50%;
+  border: 2px solid var(--muted); border-top-color: transparent; animation: badge-spin .8s linear infinite;
+}
+@keyframes badge-spin { to { transform: rotate(360deg); } }
+.md-editor .cm-badge.checked { background: transparent; color: var(--muted); font-weight: 600; animation: badge-fade 4s forwards; }
+@keyframes badge-fade { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
 .md-editor .cm-badge.similar { background: transparent; color: var(--violet); border: 1px solid var(--violet); line-height: 18px; }
 .md-editor .cm-badge.resolved { background: transparent; color: var(--green); border: 1px solid var(--green); line-height: 18px; }
 .qconf-menu { width: min(340px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow: auto; }

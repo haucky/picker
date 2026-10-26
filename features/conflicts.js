@@ -8,6 +8,7 @@
 // schnelle Sprachmodell „dieselbe Frage“, steht ein „≈“ dahinter – gleiche Optionen, aber es blockiert nichts.
 import { h } from './dom.js';
 import { loadStore, embedTitle, nearest, sameQuestion } from './similar.js';
+import { localOn } from './llm.js';
 import { popMenu, closeMenu, questionLines } from './qeditor.js';
 import { parseQuestion, parseDayLine } from './studydoc.js';
 import { openPeek, closePeek, peekBeside, inPeek } from './peek.js';
@@ -36,7 +37,11 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
   const similar = new Map();     // Titel (klein) → 'pending' | null (nichts) | { path, score } (ähnliche Frage)
   const simRes = new Map();      // Titel (klein) → { action, path } (Entscheidung bei ähnlicher Frage)
   const dismissed = new Set();   // Titel (klein): „keine Dublette“
-  let store;                     // Promise der Embeddings (similar.js) oder null
+  const checked = new Map();     // Titel (klein) → { at, text, title }: kurz angezeigtes Ergebnis einer Prüfung ohne Treffer
+  const SHOW_CHECKED = 4000;
+  let store;                     // Promise der Embeddings (similar.js; Ergebnis null = noch keine berechnet)
+  let storeMissingAt = 0;        // wann zuletzt keine gefunden wurden (erneut suchen höchstens alle 15 s)
+  const noStoreShown = new Set(); // Titel (klein), bei denen der Hinweis „erst berechnen“ schon kam
   let cm = null;
   let active = -1;   // Zeile mit dem Cursor: dort wird (noch) nicht geprüft
   let index = null;  // Titel (klein) → [Notiz]
@@ -126,24 +131,64 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
   }
 
   /** Neue Frage prüfen (im Hintergrund): Embedding → ähnlichste vorhandene → Sprachmodell. */
+  /** Ergebnis ohne Treffer kurz hinter der Frage zeigen (✓ bzw. Hinweis), dann wieder ausblenden. */
+  function flash(key, text, title) {
+    checked.set(key, { at: Date.now(), text, title });
+    setTimeout(() => cm?.refresh(), SHOW_CHECKED + 50);
+  }
+
   async function check(title) {
     const key = title.toLowerCase();
-    if (similar.has(key) || existing(title) || !isNew(title)) return;
+    if (similar.has(key) || existing(title) || !isNew(title) || !localOn()) return; // ohne lokalen Server: still
     similar.set(key, 'pending');
+    cm?.refresh(); // Ladeanzeige hinter der Frage
     let found = null;
     try {
-      store ??= loadStore(core).catch(() => null);
+      if (store === undefined || (storeMissingAt && Date.now() - storeMissingAt > 15000)) {
+        storeMissingAt = 0;
+        store = loadStore(core).catch(() => null);
+      }
       const st = await store;
-      if (st) {
+      if (!st) {
+        storeMissingAt ||= Date.now();
+        if (!noStoreShown.has(key)) flash(key, 'i', 'Ähnliche Fragen: erst unter Settings → Ähnliche Fragen „Berechnen & vergleichen“');
+        noStoreShown.add(key);
+        similar.delete(key); // später nochmal prüfen, wenn es Vektoren gibt
+        cm?.refresh();
+        return;
+      } else {
         const vec = await embedTitle(st, title);
         const cands = nearest(st, vec, { skip: (path) => { const n = core.get(path); return !n || exclude(n) || n.title.toLowerCase() === key; } });
         for (const c of cands) {
           if (await sameQuestion(title, core.get(c.path).title)) { found = { path: c.path, score: c.score }; break; }
         }
+        if (!found) flash(key, '✓', cands.length ? `Keine gleiche Frage (${cands.length} ähnliche geprüft)` : 'Keine ähnliche Frage gefunden');
       }
-    } catch { /* Server weg, keine KI: dann eben keine Ähnlichkeit */ }
+    } catch (err) {
+      flash(key, '⚠', 'Prüfung nicht möglich: ' + (err.message || err.name));
+    }
     similar.set(key, found);
-    if (found && cm) { cm.refresh(); onChange(); }
+    if (cm) { cm.refresh(); if (found) onChange(); }
+  }
+
+  // Prüfungen nacheinander (nicht parallel), damit der lokale Server nicht mehrere auf einmal rechnen muss
+  let queue = Promise.resolve();
+  const queued = new Set(); // Titel (klein), die auf ihre Prüfung warten (Ladeanzeige schon sichtbar)
+  const enqueue = (title) => {
+    queued.add(title.toLowerCase());
+    queue = queue.then(() => { queued.delete(title.toLowerCase()); return check(title); });
+  };
+
+  /** Alle neuen, noch nicht geprüften Fragen außerhalb der Cursor-Zeile prüfen (auch eingefügte). */
+  function checkLeft() {
+    if (!cm || !localOn()) return;
+    const lines = cm.value.split('\n');
+    for (const q of questionLines(lines)) {
+      if (q.line === active) continue;
+      const key = q.title.toLowerCase();
+      if (similar.has(key) || queued.has(key) || existing(q.title) || !isNew(q.title)) continue;
+      enqueue(q.title);
+    }
   }
 
   function showSimilar(line, rect) {
@@ -207,10 +252,8 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
     /** Zeile mit dem Cursor wechselt: die verlassene Frage wird jetzt geprüft. */
     setActive(line) {
       if (line === active) return;
-      // die verlassene Zeile: neue Frage auf ähnliche prüfen
-      const left = active >= 0 && cm ? parseQuestion(lineText(active)) : null;
-      if (left) check(left.title);
       active = line;
+      checkLeft(); // u. a. die gerade verlassene Frage auf ähnliche prüfen
       cm?.refresh();
       onChange();
     },
@@ -220,7 +263,15 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
       if (line === active || !cm) return [];
       const ex = existing(q.title);
       if (!ex) {
+        const key = q.title.toLowerCase();
+        if (similar.get(key) === 'pending' || queued.has(key)) {
+          return [{ line, badge: { at: q.tagsAt, text: '', class: 'checking', title: 'Suche ähnliche Fragen …', onClick: () => {} } }];
+        }
         const sim = similarTo(q.title);
+        const c = checked.get(key);
+        if (!sim && c && Date.now() - c.at < SHOW_CHECKED) {
+          return [{ line, badge: { at: q.tagsAt, text: c.text, class: 'checked', title: c.title, onClick: () => ui.toast(c.title, 4000) } }];
+        }
         if (!sim) return [];
         const r = simRes.get(q.title.toLowerCase());
         const res = r && r.path === sim.note.path ? r.action : null;
