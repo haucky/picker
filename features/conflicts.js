@@ -7,7 +7,7 @@
 // (similar.js) wird eine neue Frage beim Verlassen der Zeile mit den ähnlichsten vorhandenen verglichen; sagt das
 // schnelle Sprachmodell „dieselbe Frage“, steht ein „≈“ dahinter – gleiche Optionen, aber es blockiert nichts.
 import { h } from './dom.js';
-import { loadStore, embedTitle, nearest, sameQuestion } from './similar.js';
+import { loadStore, embedTitle, nearest, sameQuestion, textSimilarity } from './similar.js';
 import { localOn } from './llm.js';
 import { popMenu, closeMenu, questionLines } from './qeditor.js';
 import { parseQuestion, parseDayLine } from './studydoc.js';
@@ -146,10 +146,33 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
     setTimeout(() => cm?.refresh(), SHOW_CHECKED + 50);
   }
 
-  /** Neue Frage prüfen (im Hintergrund): Embedding → ähnlichste vorhandene → Sprachmodell. */
+  /** Fast gleich geschriebene vorhandene Frage (Tippfehler, ≥ 85 % gleiche Zeichen) – ohne KI, sofort. */
+  function typoMatch(title) {
+    const key = title.toLowerCase();
+    let best = null;
+    for (const n of core.list()) {
+      const t = n.title.toLowerCase();
+      if (t === key || Math.abs(t.length - key.length) > Math.max(t.length, key.length) * 0.15) continue;
+      if (exclude(n) && docLine(n.title) < 0) continue;
+      const score = textSimilarity(title, n.title);
+      if (score >= 0.85 && (!best || score > best.score)) best = { path: n.path, score };
+    }
+    return best;
+  }
+
+  /**
+   * Neue Frage prüfen (im Hintergrund): erst fast gleich geschriebene (ohne KI), dann mit lokalem Server
+   * Embedding → ähnlichste vorhandene → Sprachmodell.
+   */
   async function check(title) {
     const key = title.toLowerCase();
-    if (similar.has(key) || existing(title) || !isNew(title) || !localOn()) return; // ohne lokalen Server: still
+    if (similar.has(key) || existing(title) || !isNew(title)) return;
+    const typo = typoMatch(title);
+    if (typo || !localOn()) { // ohne lokalen Server: nur die Tippfehler-Prüfung, still
+      similar.set(key, typo);
+      if (typo && cm) { cm.refresh(); onChange(); }
+      return;
+    }
     similar.set(key, 'pending');
     cm?.refresh(); // Ladeanzeige hinter der Frage
     let found = null;
@@ -195,7 +218,7 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
 
   /** Alle neuen, noch nicht geprüften Fragen außerhalb der Cursor-Zeile prüfen (auch eingefügte). */
   function checkLeft() {
-    if (!cm || !localOn()) return;
+    if (!cm) return;
     const lines = cm.value.split('\n');
     for (const q of questionLines(lines)) {
       if (q.line === active) continue;

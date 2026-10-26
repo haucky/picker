@@ -178,14 +178,16 @@ export function nearest(store, vec, { min = 0.75, k = 3, skip = () => false } = 
 
 /* ---------- Fragen vergleichen (Sprachmodell) ---------- */
 
-const SAME_SYSTEM = 'Du vergleichst zwei Fragen aus persönlichen Notizen (Lernnotizen oder Tagebuch). Antworte nur mit JA oder NEIN.';
-const judged = new Map(); // „a\0b“ (sortiert, klein) → true/false
+const SAME_SYSTEM = 'Du erkennst doppelte Fragen in persönlichen Notizen (Lernnotizen oder Tagebuch). Antworte nur mit JA oder NEIN.';
+// Version der Entscheidungsregel: gespeicherte Entscheidungen einer älteren (strengeren) Regel zählen nicht mehr
+const JUDGE_VERSION = 'v2';
+const judged = new Map(); // „v2\0a\0b“ (sortiert, klein) → true/false
 
-const pairKey = (a, b) => [a.toLowerCase(), b.toLowerCase()].sort().join('\0');
+const pairKey = (a, b) => [JUDGE_VERSION, ...[a.toLowerCase(), b.toLowerCase()].sort()].join('\0');
 
-/** Gespeicherte Entscheidungen übernehmen ({ Schlüssel: true/false }, z. B. aus embeddings.json). */
+/** Gespeicherte Entscheidungen übernehmen ({ Schlüssel: true/false }, z. B. aus embeddings.json); nur aktuelle Regel. */
 export function seedJudged(obj) {
-  for (const [k, v] of Object.entries(obj || {})) if (!judged.has(k)) judged.set(k, !!v);
+  for (const [k, v] of Object.entries(obj || {})) if (k.startsWith(JUDGE_VERSION + '\0') && !judged.has(k)) judged.set(k, !!v);
 }
 
 /** Alle Entscheidungen zum Speichern. */
@@ -194,19 +196,50 @@ export const judgedJSON = () => Object.fromEntries(judged);
 /** Schon entschieden? true/false oder undefined. */
 export const judgedSame = (a, b) => judged.get(pairKey(a, b));
 
+/** Zum Vergleichen: klein, ohne Satzzeichen und doppelte Leerzeichen. */
+const norm = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+/** Ähnlichkeit zweier Texte über die Zeichen (1 = gleich), nach Levenshtein. */
+export function textSimilarity(a, b) {
+  a = norm(a); b = norm(b);
+  if (a === b) return 1;
+  const m = a.length, n = b.length;
+  if (!m || !n) return 0;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return 1 - prev[n] / Math.max(m, n);
+}
+
+/** Antwort des Modells → true (JA) / false (NEIN); ein evtl. <think>-Block und Text davor werden übersprungen. */
+export function parseVerdict(text) {
+  const t = String(text || '').replace(/<think>[\s\S]*?(<\/think>|$)/gi, ' ');
+  const yes = t.search(/\b(ja|yes)\b/i);
+  const no = t.search(/\b(nein|no)\b/i);
+  return yes >= 0 && (no < 0 || yes < no);
+}
+
 /**
- * Fragen beide nach demselben? (Sprachmodell, Stufe „schnell“; gecacht.) Nur dasselbe Thema oder dieselbe Person
- * reicht nicht. Wirft, wenn keine KI eingerichtet ist.
+ * Fragen beide nach demselben? Fast gleich geschrieben (Tippfehler, Satzzeichen; ≥ 85 % gleiche Zeichen) gilt ohne
+ * Rückfrage als gleich; sonst entscheidet das Sprachmodell (Stufe „schnell“). Gecacht. Andere Wortwahl,
+ * Umformulierung und Tippfehler zählen als gleich, ein anderer Aspekt, eine andere Person o. Ä. nicht.
+ * Wirft, wenn keine KI eingerichtet ist.
  */
 export async function sameQuestion(a, b, { signal } = {}) {
   const key = pairKey(a, b);
   if (judged.has(key)) return judged.get(key);
+  if (textSimilarity(a, b) >= 0.85) { judged.set(key, true); return true; }
   const text = await chat({
-    system: SAME_SYSTEM, purpose: 'judge', maxTokens: 4, temperature: 0, context: 512, timeout: 60000, signal,
-    user: `Frage 1: ${a}?\nFrage 2: ${b}?\n\nFragen beide nach demselben, sodass dieselbe Antwort beide beantwortet? ` +
-      'Nur dasselbe Thema oder dieselbe Person reicht nicht. Antworte mit JA oder NEIN.',
+    system: SAME_SYSTEM, purpose: 'judge', maxTokens: 16, temperature: 0, context: 512, timeout: 60000, signal,
+    user: `Frage 1: ${a}?\nFrage 2: ${b}?\n\n` +
+      'Ist das im Kern dieselbe Frage? JA auch bei Tippfehlern, anderer Wortwahl, Umstellung oder leichter Umformulierung. ' +
+      'NEIN nur, wenn nach etwas anderem gefragt wird (z. B. anderer Aspekt, andere Person, anderes Detail). ' +
+      'Antworte mit JA oder NEIN.',
   });
-  const same = /^\W*(ja|yes)\b/i.test(text);
+  const same = parseVerdict(text);
   judged.set(key, same);
   return same;
 }
