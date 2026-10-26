@@ -95,7 +95,8 @@ export function createQuestionEditor(ui, opts) {
     onChange: opts.onChange,
     decorate: (text) => questionMarks(text, extra),
     onCursorLine: conflicts ? (line) => conflicts.setActive(line) : undefined,
-    openLink: (target) => ui.openLink(target),
+    // [[Links]]: mit Konflikt-Erkennung im Nebenfenster (peek.js), sonst im normalen Editor
+    openLink: (target) => (conflicts ? conflicts.openLink(target) : ui.openLink(target)),
     saveImage: ui.saveImage,
     spell: ui.spell,
     ai: ui.ai,
@@ -124,9 +125,9 @@ export function closeMenu() {
 
 /**
  * Öffnet ein Menü unter `rect`; `fill(el)` setzt den Inhalt (und darf ihn später austauschen), `cls` = zusätzliche
- * Klasse. Gibt das Element zurück.
+ * Klasse, `keep(node)` → true für Stellen außerhalb, an denen ein Klick das Menü nicht schließt. Gibt das Element zurück.
  */
-export function popMenu(rect, fill, cls = '') {
+export function popMenu(rect, fill, cls = '', keep = () => false) {
   closeMenu();
   const el = h('div', { class: 'qmenu' + (cls ? ' ' + cls : ''), role: 'menu' });
   fill(el);
@@ -134,7 +135,7 @@ export function popMenu(rect, fill, cls = '') {
   const w = el.offsetWidth;
   el.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - w - 8)) + 'px';
   el.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - el.offsetHeight - 8)) + 'px';
-  el._outside = (e) => { if (!el.contains(e.target)) closeMenu(); };
+  el._outside = (e) => { if (!el.contains(e.target) && !keep(e.target)) closeMenu(); };
   el._key = (e) => { if (e.key === 'Escape') { e.preventDefault(); closeMenu(); } };
   document.addEventListener('pointerdown', el._outside, true);
   document.addEventListener('keydown', el._key, true);

@@ -699,14 +699,26 @@ img.img-big { max-width: 100%; }
 .qconf-body { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); max-height: 8.5em; overflow: hidden; }
 .qconf-answer { color: var(--text-2); overflow-wrap: anywhere; max-height: 4.5em; overflow: hidden; }
 .qconf-answer span { color: var(--magenta); font-weight: 600; }
-.qpop-back {
-  position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, .45);
-  display: flex; align-items: flex-start; justify-content: center; padding: max(16px, env(safe-area-inset-top)) 12px 12px;
+/* Nebenfenster (peek.js): am Computer rechts am Rand, auf dem Handy unten; kein Overlay */
+.peek {
+  position: fixed; z-index: 13; display: flex; flex-direction: column; gap: 8px; overflow: auto;
+  background: var(--bg); border: 1px solid var(--line); box-shadow: 0 8px 32px rgba(0, 0, 0, .3);
+  left: 0; right: 0; bottom: 0; height: 58dvh; border-radius: 14px 14px 0 0;
+  padding: 10px 14px calc(14px + env(safe-area-inset-bottom));
 }
-.qpop {
-  width: min(640px, 100%); max-height: calc(100dvh - 32px); overflow: auto; display: flex; flex-direction: column; gap: 8px;
-  background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 10px 14px 14px; box-shadow: 0 10px 40px rgba(0, 0, 0, .35);
+body.peek-open .panel { padding-bottom: calc(58dvh + 24px); } /* Editor lässt sich über dem Fenster weiterscrollen */
+@media (min-width: 900px) {
+  .peek { left: auto; right: 16px; top: 16px; bottom: 16px; height: auto; width: min(440px, calc(50vw - 40px)); border-radius: 14px; padding-bottom: 14px; }
+  /* Inhalt links neben dem Fenster, damit nichts (z. B. Speichern) verdeckt wird */
+  body.peek-open .panel { padding-bottom: calc(var(--tabs-h) + 16px); margin-right: calc(min(440px, 50vw - 40px) + 32px); }
 }
+.peek-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.peek-actions .btn.small { min-height: 36px; font-size: .85rem; }
+.peek-actions .btn.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.peek-tags { border-bottom: 1px solid var(--line); font-size: .9rem; }
+.peek .peek-tags { flex: none; }
+.peek .md-editor .cm-content { padding: 4px 0 2em; min-height: 8em; } /* nicht so hoch wie im Vollbild-Editor */
+.peek .peek-tags .cm-content { padding: 2px 0; min-height: 0; }
 .qpop-head { display: flex; align-items: center; gap: 8px; }
 .qpop-where { flex: 1; color: var(--muted); font-size: .8rem; overflow-wrap: anywhere; }
 .qpop-title {
@@ -714,7 +726,7 @@ img.img-big { max-width: 100%; }
   font: inherit; font-weight: 600; font-size: 1.05rem; padding: 6px 2px; outline: none;
 }
 .qpop-title:focus { border-bottom-color: var(--accent); }
-.qpop-editor { min-height: 120px; }
+.qpop-editor { min-height: 120px; flex: 1 0 auto; }
 .qpop-err { color: var(--red); font-size: .85rem; }
 .qpop-row { display: flex; align-items: center; gap: 8px; }
 .qpop-gap { flex: 1; }

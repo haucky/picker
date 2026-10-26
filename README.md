@@ -41,7 +41,7 @@ Wie war die Vorlesung?
 
 - Jede Frage wird beim **Speichern** eine eigene Notiz im obersten Ordner mit `#life/diary #date/…` von heute. Eine Zeile `TT.MM.JJJJ` (allein, nicht eingerückt) gilt für alle Fragen darunter: Sie bekommen dieses Datum. Text zwischen Datumszeile und nächster Frage ist ein Fehler. Weitere Tags hinter die Frage.
 - **Wiederholen:** Chips „nein · täglich · wöchentlich · monatlich · alle 2/3 Monate · jährlich“ (gemerkt) setzen ein festes Intervall für alle neuen Einträge; eine Frage mit eigenem `#review/…` dahinter behält ihres. Einträge mit Intervall bekommen gleich `#reviewed/` mit ihrem Datum (sonst wären sie sofort fällig).
-- **Frage gibt es schon:** wie im VL-Editor („!“ hinter der Frage, Menü mit Vorschau, Umformulieren, Vorhandenes öffnen). Statt Zusammenführen gibt es **↪ Als Antwort anhängen:** beim Speichern wird dein Text als `::TT.MM.JJJJ::`-Antwort (Datum des Eintrags) an den vorhandenen Eintrag gehängt, und in dessen Frontmatter steht `asked-again: [JJJJ-MM-TT, …]` – so ist festgehalten, dass du dir die Frage von dir aus noch einmal gestellt hast (anders als eine Antwort über „Heute sehe ich das so …“). Ausgewertet wird das noch nicht.
+- **Frage gibt es schon:** wie im VL-Editor („!“ hinter der Frage, vorhandener Eintrag im Nebenfenster, Link einfügen; [[Links]] öffnen ebenfalls das Nebenfenster). Statt Zusammenführen gibt es **↪ Als Antwort anhängen:** beim Speichern wird dein Text als `::TT.MM.JJJJ::`-Antwort (Datum des Eintrags) an den vorhandenen Eintrag gehängt, und in dessen Frontmatter steht `asked-again: [JJJJ-MM-TT, …]` – so ist festgehalten, dass du dir die Frage von dir aus noch einmal gestellt hast (anders als eine Antwort über „Heute sehe ich das so …“). Ausgewertet wird das noch nicht.
 - Sonst wird hier nur angelegt (kein Review-Status, nichts wird geändert oder gelöscht). Danach ist der Editor leer; was nicht angelegt werden konnte (z. B. Name gibt es schon), bleibt stehen. Der Text bleibt als Entwurf erhalten, auch wenn die App geschlossen wird.
 
 ### Diary → Taggen
@@ -93,13 +93,12 @@ Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.m
 
   **Datumszeile:** Eine Zeile `TT.MM.JJJJ` (allein, nicht eingerückt, violett) beendet die Frage davor; alle Fragen darunter bekommen beim Speichern dieses `#date/…` und gehören danach zu der VL dieses Tages (der Editor lädt die VL danach neu und meldet, wie viele Fragen weggezogen sind). So lassen sich z. B. Fragen nachtragen oder falsch einsortierte verschieben.
 
-  **Frage gibt es schon:** Sobald du die Zeile einer Frage verlässt, wird geprüft, ob es im Vault schon eine Notiz mit diesem Namen gibt (Groß-/Kleinschreibung egal; die Fragen dieser VL selbst zählen nicht). Dann ist die Frage orange unterkringelt und dahinter steht ein **!**. Antippen öffnet ein Menü mit einer Vorschau der vorhandenen Notiz (Ordner, Datum, Inhalt, neueste Antwort) und:
+  **Frage gibt es schon:** Sobald du die Zeile einer Frage verlässt, wird geprüft, ob es im Vault schon eine Notiz mit diesem Namen gibt (Groß-/Kleinschreibung egal; die Fragen dieser VL selbst zählen nicht). Dann ist die Frage orange unterkringelt und dahinter steht ein **!**. Antippen öffnet die vorhandene Frage im **Nebenfenster** (kein Overlay, der Editor bleibt bedienbar; am Computer rechts am Rand, auf dem Handy unten): oben Ordner und Datum, darunter Frage, Tag-Zeile (z. B. `#uni/dbs #date/2026/10/14`, daran sieht man die VL) und Inhalt – alles direkt bearbeitbar, mit Tag-Vorschlägen. **Speichern** speichert sofort nur diese Notiz (umbenennen nimmt Lernstand und Tags mit), **In den Papierkorb** löscht sie. Ist der Name danach frei, verschwindet das „!“. Die Optionen stehen am Computer als Menü neben dem „!“, auf dem Handy als Knöpfe oben im Fenster:
   - **↪ Zusammenführen:** beim Speichern wird dein Inhalt an die vorhandene Frage angehängt (vor ihren eigenen Antworten, ihre Tags bekommen deine zusätzlichen Tags); sie bleibt in ihrer VL und behält ihren Lernstand. Die Frage verschwindet dann aus dieser VL.
   - **⇢ Zusammenführen und hierher holen:** genauso, und die vorhandene Frage zieht in diese VL um (Datum und Stapel-Tag dieser VL).
-  - **✎ Umformulieren:** die neue Frage anders benennen, wenn es doch eine andere Frage ist.
-  - **📝 Vorhandenes öffnen:** ein Pop-up mit der vorhandenen Frage und ihrem ganzen Inhalt, direkt bearbeitbar: Frage umbenennen (Lernstand und Tags ziehen mit), Inhalt ändern oder rausschneiden, **Speichern** (sofort, nur diese Notiz) oder **In den Papierkorb**. Ist der Name danach frei, verschwindet das „!“.
+  - **🔗 Link einfügen:** setzt `[[Vorhandene Frage]]` als eigene Zeile ans Ende deiner Frage. Der Namenskonflikt bleibt – deine Frage anders formulieren (einfach im Editor) oder zusammenführen.
 
-  Zusammenführen wird erst mit **Speichern** ausgeführt; bis dahin zeigt das Badge die Entscheidung (grünes ↪ bzw. ⇢), im Menü lässt sie sich ändern oder aufheben. Fragen mit „!“ ohne Entscheidung verhindern das Speichern.
+  Zusammenführen wird erst mit **Speichern** ausgeführt; bis dahin zeigt das Badge die Entscheidung (grünes ↪ bzw. ⇢), sie lässt sich ändern oder aufheben. Fragen mit „!“ ohne Entscheidung verhindern das Speichern. **[[Links]]** im VL-Editor (und im Nebenfenster) öffnen die verlinkte Notiz ebenfalls im Nebenfenster.
 
   **Tags hinter der Frage:** Die Grund-Tags der VL (Stapel-Tag bzw. dessen Untertag und `#date/…`) werden nicht angezeigt. Alle anderen Tags aus der Tag-Zeile einer Notiz stehen hinter ihrer Frage und lassen sich dort ändern, hinzufügen oder löschen (z. B. `#not-for-exam`).
 
@@ -264,7 +263,7 @@ In nicht unterstützten Browsern zeigt die App einen entsprechenden Hinweis.
 - `core.js` – Datenschicht: Vault-Zugriff, Zwischenspeicher (IndexedDB), Abgleich, CRUD (`read`, `create`, `update`, `remove`), Auslesen von Tags/Datum, Events (`change`, `status`).
 - `app.js` – Rahmen: Startseite, Tab-Leiste, gemeinsamer Editor.
 - `features/srs.js` – Review-Logik ohne DOM (Algorithmus, feste Intervalle, `Review.md`); `features/markdown.js` – Markdown-Renderer für die Rückseite.
-- `features/conflicts.js` – Fragen, die es schon gibt: Erkennen, Menü, Pop-up zum Bearbeiten der vorhandenen Notiz.
+- `features/conflicts.js` – Fragen, die es schon gibt: Erkennen, Optionen, Link einfügen; `features/peek.js` – Nebenfenster zum Bearbeiten einer vorhandenen Notiz (Frage, Tags, Inhalt).
 - `features/qeditor.js` – gemeinsamer Fragen-Editor (Markierungen, Fehler/Hinweise) für den VL-Editor (Study) und Diary → Schreiben; die Logik dazu (Fragen, Datumszeilen, Speichern planen) in `features/studydoc.js`.
 - `features/home.js` – Startbildschirm (Suche aus `features/search.js`, wichtige Todos); weitere Bereiche als eigene Abschnitte dort.
 - `obsidian-plugin/picker-changelog/` – Obsidian-Plugin, das Änderungen protokolliert (wird nicht von der PWA geladen).

@@ -216,7 +216,6 @@ async function openVL(deck, day, focus, btn) {
   ed.conflicts = createConflicts({
     ui, mode: 'vl',
     exclude: (n) => !!ed && ed.originals.some((o) => o.path === n.path),
-    rename: (oldTitle, next) => renameQuestion(oldTitle, next),
     onChange: () => { if (ed?.cm) { update(); storeDraft(); } },
   });
   if (restore) ed.conflicts.load(draft.conflicts);

@@ -5,9 +5,9 @@
 // gehängt werden (conflicts.js; vermerkt als „noch einmal gefragt“). Sonst wird nur angelegt; kein Review-Status.
 import { parseTags } from '../core.js';
 import { h } from './dom.js';
-import { createQuestionEditor, createIssues, questionLines } from './qeditor.js';
+import { createQuestionEditor, createIssues } from './qeditor.js';
 import { createConflicts } from './conflicts.js';
-import { parseDoc, planSave, applyMerge, titleProblem } from './studydoc.js';
+import { parseDoc, planSave, applyMerge } from './studydoc.js';
 import {
   today, dayToTagDate, dayToGerman, fixedInterval, setFixedInterval, reviewedDay, setReviewed, sameInterval,
   formatFixed, intervalTag,
@@ -157,20 +157,6 @@ async function save() {
   }
 }
 
-/** Frage im Text umformulieren (Menü am „!“). */
-function renameQuestion(oldTitle, next) {
-  const problem = titleProblem(next);
-  if (problem) { ui.toast(problem, 4000); return false; }
-  const lines = cm.value.split('\n');
-  const qs = questionLines(lines);
-  if (qs.some((q) => q.title === next)) { ui.toast('Diese Frage steht schon im Text', 4000); return false; }
-  const hit = qs.find((q) => q.title === oldTitle);
-  if (!hit) return true;
-  const from = lines.slice(0, hit.line).reduce((n, l) => n + l.length + 1, 0);
-  cm.view.dispatch({ changes: { from, to: from + oldTitle.length, insert: next } });
-  return true;
-}
-
 /* ---------- Modul ---------- */
 
 export default {
@@ -192,7 +178,6 @@ export default {
     issues = createIssues((line) => cm.jumpToLine(line));
     conflicts = createConflicts({
       ui, mode: 'diary',
-      rename: renameQuestion,
       onChange: () => { if (cm) { update(); storeDraft(); } },
     });
     try { conflicts.load(JSON.parse(load(RES_KEY) || '[]')); } catch { /* egal */ }

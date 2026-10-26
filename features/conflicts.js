@@ -1,13 +1,11 @@
 // Fragen, die es im Vault schon gibt (VL-Editor und Diary → Schreiben): erkannt, sobald die Frage-Zeile verlassen
-// wird, unterkringelt mit „!“ dahinter. Das „!“ öffnet ein Menü: Vorschau der vorhandenen Notiz, Zusammenführen bzw.
-// als Antwort anhängen (ausgeführt beim Speichern), Umformulieren, Vorhandenes öffnen (Pop-up zum direkten Bearbeiten,
-// speichert sofort). Die Logik ohne DOM (planSave, applyMerge) steht in studydoc.js.
+// wird, unterkringelt mit „!“ dahinter. Das „!“ öffnet die vorhandene Frage im Nebenfenster (peek.js: Frage, Tags,
+// Inhalt direkt bearbeiten) und die Optionen: Zusammenführen bzw. als Antwort anhängen (ausgeführt beim Speichern) und
+// Link einfügen. [[Links]] im Editor öffnen dasselbe Nebenfenster. Logik ohne DOM (planSave, applyMerge): studydoc.js.
 import { h } from './dom.js';
-import { createEditor } from './editor.js';
-import { popMenu, closeMenu } from './qeditor.js';
-import { parseQuestion, splitNote, normBody, setContent, titleProblem, dayOfNote } from './studydoc.js';
-import { entryParts } from './streamsdoc.js';
-import { dayToGerman } from './srs.js';
+import { popMenu, closeMenu, questionLines } from './qeditor.js';
+import { parseQuestion, parseDayLine } from './studydoc.js';
+import { openPeek, closePeek, peekBeside, inPeek } from './peek.js';
 
 // Optionen je Modus: [Entscheidung, Beschriftung, Erklärung]
 const ACTIONS = {
@@ -24,10 +22,9 @@ const LABEL = { merge: 'wird zusammengeführt', here: 'wird zusammengeführt und
 
 /**
  * opts: { ui, mode: 'vl' | 'diary', exclude(note) → true für Notizen, die zum Dokument selbst gehören,
- *         rename(oldTitle, newTitle) → bool (Frage im Text umformulieren), onChange() (Markierungen/Entwurf/Hinweise
- *         neu, z. B. nach einer Entscheidung oder einer Änderung im Vault) }.
+ *         onChange() (Markierungen/Entwurf/Hinweise neu, z. B. nach einer Entscheidung oder einer Änderung im Vault) }.
  */
-export function createConflicts({ ui, mode, exclude = () => false, rename, onChange }) {
+export function createConflicts({ ui, mode, exclude = () => false, onChange }) {
   const core = ui.core;
   const resolutions = new Map(); // Titel (klein) → Entscheidung
   let cm = null;
@@ -53,160 +50,71 @@ export function createConflicts({ ui, mode, exclude = () => false, rename, onCha
 
   const lineText = (line) => cm.value.split('\n')[line] || '';
 
-  /** Wo die Notiz steht: Ordner · Datum. */
-  function where(n) {
-    const dir = n.path.includes('/') ? n.path.slice(0, n.path.lastIndexOf('/')) : 'oberster Ordner';
-    const day = dayOfNote(n);
-    return [dir, day != null ? dayToGerman(day) : null].filter(Boolean).join(' · ');
+  /** Fügt [[Titel]] als eigene Zeile ans Ende der Frage in Zeile `line` ein (vor der nächsten Frage/Datumszeile). */
+  function insertLink(line, title) {
+    const lines = cm.value.split('\n');
+    const next = questionLines(lines).find((q) => q.line > line)?.line ?? lines.length;
+    let end = lines.findIndex((l, i) => i > line && i < next && parseDayLine(l));
+    if (end < 0) end = next;
+    let last = end - 1;
+    while (last > line && !lines[last].trim()) last--;
+    const pos = lines.slice(0, last + 1).reduce((n, l) => n + l.length + 1, 0) - 1;
+    const insert = '\n[[' + title + ']]';
+    cm.view.dispatch({ changes: { from: pos, insert }, selection: { anchor: pos + insert.length }, scrollIntoView: true });
+    ui.toast(`Link auf „${title}?“ eingefügt`);
   }
 
-  function preview(n) {
-    const { body, answers } = entryParts(n.text);
-    const last = answers.at(-1);
-    return h('div', { class: 'qconf-preview' },
-      h('div', { class: 'qconf-where' }, where(n)),
-      body ? h('div', { class: 'qconf-body' }, body) : h('div', { class: 'qconf-where' }, '(kein Inhalt)'),
-      last ? h('div', { class: 'qconf-answer' }, h('span', {}, `Neueste Antwort (${last.date}): `), last.text) : null,
-      answers.length > 1 ? h('div', { class: 'qconf-where' }, `${answers.length} Antworten`) : null);
-  }
-
-  function openMenu(line, rect) {
-    const q = parseQuestion(lineText(line));
-    const ex = q && existing(q.title);
-    if (!ex) return;
+  /** Optionen für die Frage in Zeile `line`, die es als `ex` schon gibt. */
+  function optionsFor(line, q, ex) {
     const key = q.title.toLowerCase();
-    const item = (label, onclick, attrs = {}) => h('button', { type: 'button', class: 'qmenu-item', role: 'menuitem', onclick, ...attrs }, label);
+    const chosen = resolutions.get(key);
     const decide = (action) => {
       if (action) resolutions.set(key, action); else resolutions.delete(key);
       closeMenu();
       cm.refresh();
       onChange();
+      if (!peekBeside()) showConflict(line); // Knöpfe im Fenster neu (Markierung)
     };
-    const chosen = resolutions.get(key);
-    const showMain = (el) => el.replaceChildren(...[
-      h('div', { class: 'qmenu-label' }, chosen ? `Gibt es schon – ${LABEL[chosen]}` : 'Diese Frage gibt es schon:'),
-      preview(ex),
-      ...ACTIONS[mode].map(([a, label, title]) => item(label, () => decide(a), { title, class: 'qmenu-item' + (a === chosen ? ' accent' : '') })),
-      item('✎ Umformulieren', () => showRename(el)),
-      item('📝 Vorhandenes öffnen', () => { closeMenu(); openExisting(ex); }),
-      chosen ? h('div', { class: 'qmenu-sep' }) : null,
-      chosen ? item('Entscheidung aufheben', () => decide(null)) : null].filter(Boolean));
-    const showRename = (el) => {
-      const input = h('input', { type: 'text', class: 'qmenu-input', value: q.title, 'aria-label': 'Frage umformulieren' });
-      const ok = () => {
-        const next = input.value.trim().replace(/\?+$/, '').trim();
-        if (!next || next === q.title) { closeMenu(); return; }
-        if (existing(next)) { ui.toast('Diese Frage gibt es auch schon', 3000); return; }
-        if (rename(q.title, next)) closeMenu();
-      };
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ok(); } });
-      el.replaceChildren(h('div', { class: 'qmenu-label' }, 'Frage umformulieren'), input,
-        h('div', { class: 'qmenu-row' }, item('Abbrechen', closeMenu), item('Übernehmen', ok, { class: 'qmenu-item accent' })));
-      setTimeout(() => { input.focus(); input.select(); });
-    };
-    popMenu(rect, showMain, 'qconf-menu');
+    return [
+      ...ACTIONS[mode].map(([a, label, title]) => ({ label, title, accent: a === chosen, onClick: () => decide(a) })),
+      { label: '🔗 Link einfügen', title: `[[${ex.title}]] ans Ende deiner Frage`, onClick: () => { closeMenu(); insertLink(line, ex.title); } },
+      ...(chosen ? [{ label: 'Entscheidung aufheben', onClick: () => decide(null) }] : []),
+    ];
   }
 
-  /* ---------- Pop-up: vorhandene Notiz direkt bearbeiten ---------- */
-
-  function openExisting(note) {
-    const opened = note.text;
-    const title = h('input', { type: 'text', class: 'qpop-title', value: note.title + '?', 'aria-label': 'Frage' });
-    const host = h('div', { class: 'md-editor qpop-editor', 'aria-label': 'Inhalt' });
-    const errEl = h('div', { class: 'qpop-err', hidden: true });
-    const box = h('div', { class: 'qpop', role: 'dialog', 'aria-label': 'Vorhandene Frage bearbeiten' },
-      h('div', { class: 'qpop-head' }, h('span', { class: 'qpop-where' }, where(note)),
-        h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Schließen', onclick: () => close() }, '×')),
-      title, host, errEl,
-      h('div', { class: 'qpop-row' },
-        h('button', { type: 'button', class: 'link', onclick: () => trash() }, '🗑 In den Papierkorb'),
-        h('span', { class: 'qpop-gap' }),
-        h('button', { type: 'button', class: 'btn small', onclick: () => save() }, 'Speichern')));
-    const back = h('div', { class: 'qpop-back' }, box);
-    const body = normBody(splitNote(note.text).content);
-    const ed = createEditor({
-      parent: host, doc: body,
-      openLink: (t) => ui.openLink(t),
-      resolveImage: (link) => ui.resolveImage(link, note.path),
-      saveImage: ui.saveImage, spell: ui.spell, ai: ui.ai, tags: ui.tags,
+  /** Badge angetippt: vorhandene Frage im Nebenfenster, am Computer die Optionen als Menü daneben. */
+  function showConflict(line, rect) {
+    const q = parseQuestion(lineText(line));
+    const ex = q && existing(q.title);
+    if (!ex) return;
+    const chosen = resolutions.get(q.title.toLowerCase());
+    const options = optionsFor(line, q, ex);
+    openPeek(ui, ex, {
+      label: chosen ? `Gibt es schon – ${LABEL[chosen]}` : 'Gibt es schon',
+      actions: options,
+      openLink: peekLink,
+      onSaved: () => { cm?.refresh(); onChange(); },
     });
-    let busy = false;
-    const dirty = () => ed.value !== body || title.value.trim().replace(/\?+$/, '').trim() !== note.title;
-    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
-    const onPop = () => { if (back.isConnected) finish(); };
-
-    function finish() {
-      document.removeEventListener('keydown', onKey, true);
-      window.removeEventListener('popstate', onPop);
-      ed.destroy();
-      back.remove();
-      if (cm) { cm.refresh(); onChange(); }
+    if (peekBeside() && rect) {
+      popMenu(rect, (el) => el.replaceChildren(
+        h('div', { class: 'qmenu-label' }, chosen ? `Gibt es schon – ${LABEL[chosen]}` : 'Diese Frage gibt es schon:'),
+        ...options.map((o) => h('button', {
+          type: 'button', role: 'menuitem', class: 'qmenu-item' + (o.accent ? ' accent' : ''), title: o.title || '', onclick: o.onClick,
+        }, o.label))), 'qconf-menu', inPeek);
     }
-    function close(force = false) {
-      if (!force && dirty() && !confirm('Änderungen an der vorhandenen Frage verwerfen?')) return;
-      if (history.state && history.state.qpop) history.back(); // popstate schließt
-      else finish();
-    }
-    const fail = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
+  }
 
-    async function save() {
-      if (busy) return;
-      const next = title.value.trim().replace(/\?+$/, '').trim();
-      const problem = titleProblem(next);
-      if (problem) return fail(problem);
-      const renamed = next !== note.title;
-      const other = renamed && byTitle(next).find((n) => n.path !== note.path);
-      if (other) return fail(`„${next}?“ gibt es auch schon (${other.path})`);
-      busy = true;
-      try {
-        const current = await core.read(note.path);
-        if (current !== opened && !confirm('Die Notiz wurde inzwischen geändert. Trotzdem mit deinem Stand überschreiben?')) return;
-        const text = setContent(current, ed.value);
-        if (renamed) {
-          const dir = note.path.includes('/') ? note.path.slice(0, note.path.lastIndexOf('/') + 1) : '';
-          const path = dir + next + '.md';
-          if (path.toLowerCase() === note.path.toLowerCase()) { // nur Groß-/Kleinschreibung: über einen Zwischennamen
-            const tmp = dir + next + ' (umbenennen).md';
-            await core.create(tmp, text);
-            await core.remove(note.path);
-            await core.create(path, text);
-            await core.remove(tmp);
-          } else {
-            await core.create(path, text);
-            await core.remove(note.path);
-          }
-        } else if (text !== current) {
-          await core.update(note.path, text);
-        }
-        ui.toast(renamed ? `Gespeichert ✓ – umbenannt in „${next}?“` : 'Gespeichert ✓');
-        close(true);
-      } catch (err) {
-        fail('Speichern fehlgeschlagen: ' + err.message);
-      } finally {
-        busy = false;
-      }
-    }
-
-    async function trash() {
-      if (busy || !confirm(`„${note.title}?“ in den Papierkorb (.trash) verschieben?`)) return;
-      busy = true;
-      try {
-        await core.trash(note.path);
-        ui.toast('In den Papierkorb verschoben');
-        close(true);
-      } catch (err) {
-        fail('Löschen fehlgeschlagen: ' + err.message);
-      } finally {
-        busy = false;
-      }
-    }
-
-    back.addEventListener('click', (e) => { if (e.target === back) close(); });
-    document.addEventListener('keydown', onKey, true);
-    window.addEventListener('popstate', onPop);
-    history.pushState({ ...(history.state || {}), qpop: true }, '');
-    document.body.append(back);
-    setTimeout(() => ed.focus());
+  /** [[Link]] im Editor angetippt: verlinkte Notiz im Nebenfenster (wie Obsidian: Pfad, sonst Dateiname). */
+  function peekLink(target) {
+    const want = String(target).split('#')[0].trim().toLowerCase().replace(/\.md$/, '');
+    if (!want) return;
+    const notes = core.list();
+    const hit = notes.find((n) => n.path.toLowerCase().replace(/\.md$/, '') === want)
+      || notes.filter((n) => n.nameLower === want.split('/').at(-1) || n.title.toLowerCase() === want.split('/').at(-1))
+        .sort((a, b) => a.path.length - b.path.length)[0];
+    if (!hit) { ui.toast(`„${target}“ nicht gefunden`); return; }
+    closeMenu();
+    openPeek(ui, hit, { openLink: peekLink, onSaved: () => { cm?.refresh(); onChange(); } });
   }
 
   return {
@@ -214,7 +122,9 @@ export function createConflicts({ ui, mode, exclude = () => false, rename, onCha
     existing,
     attach(editor) { cm = editor; },
     /** Editor geschlossen: nicht mehr auf Änderungen im Vault hören. */
-    destroy() { off(); cm = null; closeMenu(); },
+    destroy() { off(); cm = null; closeMenu(); closePeek(true); },
+    /** Für den Editor: [[Link]] im Nebenfenster öffnen. */
+    openLink: (target) => peekLink(target),
 
     /** Zeile mit dem Cursor wechselt: die verlassene Frage wird jetzt geprüft. */
     setActive(line) {
@@ -235,7 +145,7 @@ export function createConflicts({ ui, mode, exclude = () => false, rename, onCha
       out.push({ line, badge: {
         at: q.tagsAt, text: res ? BADGE[res] : '!', class: res ? 'resolved' : 'open',
         title: res ? `Gibt es schon – ${LABEL[res]} (antippen zum Ändern)` : `Gibt es schon (${ex.path}) – antippen für Optionen`,
-        onClick: openMenu,
+        onClick: showConflict,
       } });
       return out;
     },
