@@ -51,7 +51,7 @@ Die letzten 100 Diary-Einträge (`#life/diary` mit `#date/…`) als ein Dokument
 - **Löschen:** Fehlt eine Frage im Dokument, kommt sie nach Rückfrage (mit Liste) in den Papierkorb.
 - **Neue Fragen** bekommen `#life/diary` und das Datum der Datumszeile darüber (ohne: heute), im obersten Ordner; „gibt es schon“ und ähnliche Fragen werden wie in Schreiben geprüft.
 - **Verwandte Fragen:** gespeicherte Einträge zeigen **↔ N** (siehe „Ähnliche Fragen“).
-- **Nicht im Editor** (darunter aufgeführt, antippen öffnet sie einzeln): Einträge, deren Inhalt Zeilen hat, die als Frage oder Datum gelten würden (z. B. eine Zeile, die mit „?“ endet) – sonst würden sie beim Speichern aufgeteilt –, und Einträge mit gleichem Namen wie ein anderer.
+- **Nicht im Editor** (darunter aufgeführt, antippen öffnet sie einzeln): Einträge, deren Inhalt eine Zeile hat, die als Frage oder Datum gelten würde – eine Zeile ohne `- ` davor, die mit „?“ endet, oder nur `TT.MM.JJJJ` (Listenpunkte wie `- Warum eigentlich?` sind kein Problem) –, sonst würden sie beim Speichern aufgeteilt; und Einträge mit gleichem Namen wie ein anderer.
 - **Umbenennen** einer Frage im Text = neuer Eintrag, der alte kommt in den Papierkorb (Inhalt samt Antworten bleibt, Frontmatter nicht).
 - Ungespeicherte Änderungen bleiben als Entwurf erhalten; **Neu laden** verwirft sie. Ohne Änderungen wird beim Öffnen neu aus dem Vault geladen.
 
