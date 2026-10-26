@@ -1,7 +1,7 @@
 'use strict';
 
 // Version erhöhen, wenn sich die App-Shell ändert.
-const CACHE = 'vault-picker-v45';
+const CACHE = 'vault-picker-v46';
 const SHELL = [
   './',
   './index.html',
@@ -16,6 +16,7 @@ const SHELL = [
   './features/similar.js',
   './features/related.js',
   './features/diarywrite.js',
+  './features/diaryentries.js',
   './features/search.js',
   './features/tagging.js',
   './features/study.js',

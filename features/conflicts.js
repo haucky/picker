@@ -348,7 +348,7 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
     /** Markierungen für eine Frage-Zeile (nicht in der Zeile mit dem Cursor). */
     marks(q, line) {
       if (line === active || !cm) return [];
-      const ex = existing(q.title);
+      const ex = isNew(q.title) ? existing(q.title) : null; // gespeicherte Fragen des Dokuments: kein „gibt es schon“
       if (!ex) {
         const key = q.title.toLowerCase();
         if (similar.get(key) === 'pending' || queued.has(key)) {
@@ -388,7 +388,7 @@ export function createConflicts({ ui, mode, exclude = () => false, isNew = () =>
 
     /** Hinweise für die Fehlerliste: Fragen, die es schon gibt, ohne Entscheidung (nicht in der Zeile mit dem Cursor). */
     issues(items) {
-      return items.filter((it) => it.line !== active && existing(it.title) && !resolutions.has(it.title.toLowerCase()))
+      return items.filter((it) => it.line !== active && isNew(it.title) && existing(it.title) && !resolutions.has(it.title.toLowerCase()))
         .map((it) => ({ line: it.line, msg: `„${it.title}?“ gibt es schon – „!“ hinter der Frage antippen` }));
     },
 

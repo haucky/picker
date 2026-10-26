@@ -13,7 +13,7 @@ Minimale PWA, um auf dem Android-Handy einen lokalen Obsidian-Vault schnell zu d
 ## Benutzung
 
 - **Vault öffnen** tippen und im Ordner-Dialog **nur den Vault-Ordner** auswählen (den Ordner, der `.obsidian/` enthält) – nicht „Interner Speicher“, „Documents“ o. Ä. Die App bekommt Lese- *und Schreib*zugriff auf genau diesen Ordner samt Unterordnern; gib ihr nicht mehr als nötig.
-Unten wechselst du zwischen den Modulen **Home** (mit der Suche), **Study**, **Review**, **Diary** (darin **Schreiben**, **Taggen** und **Streams**) und **Settings**. Beim Öffnen der App startet sie immer auf **Home**.
+Unten wechselst du zwischen den Modulen **Home** (mit der Suche), **Study**, **Review**, **Diary** (darin **Schreiben**, **Einträge**, **Taggen** und **Streams**) und **Settings**. Beim Öffnen der App startet sie immer auf **Home**.
 
 ### Suche (auf Home)
 
@@ -43,6 +43,17 @@ Wie war die Vorlesung?
 - **Wiederholen:** Chips „nein · täglich · wöchentlich · monatlich · alle 2/3 Monate · jährlich“ (gemerkt) setzen ein festes Intervall für alle neuen Einträge; eine Frage mit eigenem `#review/…` dahinter behält ihres. Einträge mit Intervall bekommen gleich `#reviewed/` mit ihrem Datum (sonst wären sie sofort fällig).
 - **Frage gibt es schon:** wie im VL-Editor („!“ hinter der Frage, vorhandener Eintrag im Nebenfenster, Link einfügen; [[Links]] öffnen ebenfalls das Nebenfenster). Statt Zusammenführen gibt es **↪ Als Antwort anhängen:** beim Speichern wird dein Text als `::TT.MM.JJJJ::`-Antwort (Datum des Eintrags) an den vorhandenen Eintrag gehängt, und in dessen Frontmatter steht `asked-again: [JJJJ-MM-TT, …]` – so ist festgehalten, dass du dir die Frage von dir aus noch einmal gestellt hast (anders als eine Antwort über „Heute sehe ich das so …“). Ausgewertet wird das noch nicht.
 - Sonst wird hier nur angelegt (kein Review-Status, nichts wird geändert oder gelöscht). Danach ist der Editor leer; was nicht angelegt werden konnte (z. B. Name gibt es schon), bleibt stehen. Der Text bleibt als Entwurf erhalten, auch wenn die App geschlossen wird.
+
+### Diary → Einträge
+
+Die letzten 100 Diary-Einträge (`#life/diary` mit `#date/…`) als ein Dokument im selben Editor wie eine VL: lesen, ändern, ergänzen, löschen und alles auf einmal **Speichern**. Neueste Tage oben, vor jedem Tag eine Datumszeile `TT.MM.JJJJ` (wie in Schreiben) – eine Frage unter ein anderes Datum geschoben bekommt beim Speichern dieses `#date/…`. Weitere Tags stehen hinter der Frage (z. B. `#diary/mental`). Kein Review-Status, keine `study-order`; Frontmatter (z. B. `asked-again`) bleibt.
+
+- **Löschen:** Fehlt eine Frage im Dokument, kommt sie nach Rückfrage (mit Liste) in den Papierkorb.
+- **Neue Fragen** bekommen `#life/diary` und das Datum der Datumszeile darüber (ohne: heute), im obersten Ordner; „gibt es schon“ und ähnliche Fragen werden wie in Schreiben geprüft.
+- **Verwandte Fragen:** gespeicherte Einträge zeigen **↔ N** (siehe „Ähnliche Fragen“).
+- **Nicht im Editor** (darunter aufgeführt, antippen öffnet sie einzeln): Einträge, deren Inhalt Zeilen hat, die als Frage oder Datum gelten würden (z. B. eine Zeile, die mit „?“ endet) – sonst würden sie beim Speichern aufgeteilt –, und Einträge mit gleichem Namen wie ein anderer.
+- **Umbenennen** einer Frage im Text = neuer Eintrag, der alte kommt in den Papierkorb (Inhalt samt Antworten bleibt, Frontmatter nicht).
+- Ungespeicherte Änderungen bleiben als Entwurf erhalten; **Neu laden** verwirft sie. Ohne Änderungen wird beim Öffnen neu aus dem Vault geladen.
 
 ### Diary → Taggen
 

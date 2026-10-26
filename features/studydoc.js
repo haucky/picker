@@ -299,7 +299,7 @@ export function applyItem(text, { body, tags, day }, order, base, state) {
   return applyBody(text, body, order);
 }
 
-/** Notiz mit neuem Inhalt und Reihenfolge; Frontmatter (SR-Stand), Tag-Zeile und Zeilenumbrüche bleiben. */
+/** Notiz mit neuem Inhalt und Reihenfolge (null = keine); Frontmatter (SR-Stand), Tag-Zeile und Zeilenumbrüche bleiben. */
 export function applyBody(text, body, order) {
   const nl = text.includes('\r\n') ? '\r\n' : '\n';
   let out = text;
@@ -308,7 +308,7 @@ export function applyBody(text, body, order) {
     const h = head && !/\n$/.test(head) && body ? head + nl : head;
     out = bom + front + h + (body ? body.replace(/\n/g, nl) + nl : '');
   }
-  if (parseFrontmatter(out)[ORDER_FIELD] !== String(order)) out = setFrontmatterFields(out, { [ORDER_FIELD]: String(order) });
+  if (order != null && parseFrontmatter(out)[ORDER_FIELD] !== String(order)) out = setFrontmatterFields(out, { [ORDER_FIELD]: String(order) });
   return out;
 }
 
@@ -354,6 +354,7 @@ export function planSave(doc, originals, ctx) {
     const seen = new Set(base.map((t) => t.toLowerCase()));
     it = { ...it, day, tags: it.tags.filter((t) => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase())) };
     const itemDay = day ?? ctx.day ?? null;
+    const order = ctx.order === false ? null : i + 1;
     const movesDay = (text, d) => d != null && !tagLineTags(text).some((t) => t.toLowerCase() === 'date/' + dayToTagDate(d));
     const state = ctx.states?.get(it.title);
     let o = byTitle.get(it.title);
@@ -364,12 +365,12 @@ export function planSave(doc, originals, ctx) {
     if (o && o.title !== it.title) {
       used.add(o.path);
       const dir = o.path.includes('/') ? o.path.slice(0, o.path.lastIndexOf('/') + 1) : '';
-      const text = applyItem(o.text, it, i + 1, ctx.base, state);
+      const text = applyItem(o.text, it, order, base, state);
       if (movesDay(o.text, day)) redated.push(it.title);
       moves.push({ from: o.path, path: dir + it.title + '.md', title: it.title, oldTitle: o.title, line: it.line, day: itemDay, text });
     } else if (o) {
       used.add(o.path);
-      const text = applyItem(o.text, it, i + 1, ctx.base, state);
+      const text = applyItem(o.text, it, order, base, state);
       if (movesDay(o.text, day)) redated.push(it.title);
       if (text !== o.text) updates.push({ path: o.path, title: o.title, day: itemDay, text });
     } else if (ctx.existing?.(it.title)) {
@@ -383,7 +384,7 @@ export function planSave(doc, originals, ctx) {
     } else {
       const path = (ctx.folder ? ctx.folder + '/' : '') + it.title + '.md';
       if (day != null) redated.push(it.title);
-      creates.push({ path, title: it.title, line: it.line, day: itemDay, text: newNoteText([...base, ...it.tags], it.body, ctx.order === false ? null : i + 1, state) });
+      creates.push({ path, title: it.title, line: it.line, day: itemDay, text: newNoteText([...base, ...it.tags], it.body, order, state) });
     }
   });
   const deletes = originals.filter((o) => !used.has(o.path)).map((o) => ({ path: o.path, title: o.title }));
