@@ -1,13 +1,17 @@
-// Feature „Settings“: Name für den Export, KI-Key, ähnliche Fragen (Test mit Ollama), Darstellung, Stand des Abgleichs,
+// Feature „Settings“: Name für den Export, KI (lokal/Tinfoil), ähnliche Fragen, Darstellung, Stand des Abgleichs,
 // manueller (vollständiger) Abgleich, Diagnose des Obsidian-Plugin-Logs.
 import { h } from './dom.js';
 import { THEMES, getTheme, setTheme } from './theme.js';
 import { exportName, setExportName } from './export.js';
-import { apiKey, setApiKey, chat, modelFor, setModel, DEFAULT_MODELS, listModels } from './llm.js';
+import {
+  apiKey, setApiKey, chat, listModels, listLocalModels, TIERS, TIER_LABEL, DEFAULT_LOCAL_URL, DEFAULT_LOCAL,
+  DEFAULT_TINFOIL, localOn, setLocalOn, localUrl, setLocalUrl, localModel, setLocalModel, tinfoilOn, setTinfoilOn,
+  tinfoilModel, setTinfoilModel,
+} from './llm.js';
 import { PROMPTS_PATH, parsePrompts } from './prompts.js';
 import {
-  FILE as EMBED_FILE, DEFAULT_URL, DEFAULT_MODEL, embedUrl, embedModel, setEmbedUrl, setEmbedModel, parseStore,
-  updateStore, similarPairs,
+  FILE as EMBED_FILE, DEFAULT_MODEL, embedModel, setEmbedModel, parseStore, updateStore, similarPairs, sameQuestion,
+  judgedSame,
 } from './similar.js';
 
 const SHOW_ENTRIES = 30;
@@ -93,9 +97,46 @@ function nameInput() {
   });
 }
 
-let modelList, promptsInfo;
+let localModels, tinfoilModels, promptsInfo;
 
-function aiRow() {
+const textField = (label, value, placeholder, onchange, attrs = {}) => h('label', { class: 'settings-model' },
+  h('span', { class: 'kv-label' }, label),
+  h('input', { type: 'text', class: 'filter', value, placeholder, autocomplete: 'off', spellcheck: 'false', onchange, ...attrs }));
+
+const toggle = (label, on, onchange) => h('label', { class: 'settings-toggle' },
+  h('input', { type: 'checkbox', checked: on, onchange: (e) => onchange(e.target.checked) }), h('span', {}, label));
+
+/** KI lokal: an/aus, Server, Modelle je Stufe, Testen. */
+function localAI() {
+  const test = h('button', { type: 'button', class: 'btn small', onclick: async () => {
+    test.disabled = true;
+    try {
+      const have = await listLocalModels({ signal: AbortSignal.timeout(5000) });
+      localModels.replaceChildren(...have.map((id) => h('option', { value: id })));
+      const missing = TIERS.map(localModel).filter((m) => !have.some((x) => x === m || x === m + ':latest'));
+      if (missing.length) throw new Error(`Modell fehlt – im Terminal: ${missing.map((m) => 'ollama pull ' + m).join(' && ')}`);
+      if (!localOn()) { setLocalOn(true); onBox.checked = true; }
+      for (const tier of TIERS) await chat({ user: 'Antworte nur mit: OK', tier, via: 'local', maxTokens: 5, timeout: 120000 });
+      ui.toast(`Lokal verbunden ✓ (${TIERS.map(localModel).join(', ')})`, 4000);
+    } catch (err) {
+      ui.toast('Fehlgeschlagen: ' + (err.name === 'TimeoutError' || err.name === 'TypeError'
+        ? `Server unter ${localUrl()} nicht erreichbar (läuft Ollama, ist OLLAMA_ORIGINS gesetzt?)` : err.message), 7000);
+    } finally {
+      test.disabled = false;
+    }
+  } }, 'Testen');
+  const box = toggle('Lokales Modell (Ollama) verwenden', localOn(), (on) => setLocalOn(on));
+  const onBox = box.querySelector('input');
+  return [
+    h('div', { class: 'settings-key' }, box, test),
+    textField('Server', localUrl(), DEFAULT_LOCAL_URL, (e) => { setLocalUrl(e.target.value); e.target.value = localUrl(); }),
+    ...TIERS.map((tier) => textField('Modell ' + TIER_LABEL[tier], localModel(tier), DEFAULT_LOCAL[tier],
+      (e) => { setLocalModel(tier, e.target.value); e.target.value = localModel(tier); }, { list: 'ai-local-models' })),
+  ];
+}
+
+/** KI über Tinfoil: an/aus (auch mit Key erst nach Einschalten), Key, Modelle je Stufe, Testen. */
+function tinfoilAI() {
   const input = h('input', {
     type: 'password', class: 'filter settings-name', value: apiKey(), placeholder: 'Tinfoil-API-Key', autocomplete: 'off',
     spellcheck: 'false', 'aria-label': 'Tinfoil-API-Key', oninput: (e) => setApiKey(e.target.value),
@@ -104,8 +145,8 @@ function aiRow() {
     if (!apiKey()) return ui.toast('Erst einen Key eintragen.');
     test.disabled = true;
     try {
-      const models = [...new Set(Object.keys(DEFAULT_MODELS).map(modelFor))];
-      for (const model of models) await chat({ user: 'Antworte nur mit: OK', model, maxTokens: 5, timeout: 30000 });
+      const models = [...new Set(TIERS.map(tinfoilModel))];
+      for (const model of models) await chat({ user: 'Antworte nur mit: OK', model, via: 'tinfoil', maxTokens: 5, timeout: 30000 });
       ui.toast(`Verbunden ✓ Enclave geprüft (${models.join(', ')})`, 4000);
       loadModels();
     } catch (err) {
@@ -114,19 +155,15 @@ function aiRow() {
       test.disabled = false;
     }
   } }, 'Testen');
-  return h('div', { class: 'settings-key' }, input, test);
+  return [
+    toggle('Tinfoil verwenden (wenn lokal aus oder nicht erreichbar)', tinfoilOn(), (on) => setTinfoilOn(on)),
+    h('div', { class: 'settings-key' }, input, test),
+    ...TIERS.map((tier) => textField('Modell ' + TIER_LABEL[tier], tinfoilModel(tier), DEFAULT_TINFOIL[tier],
+      (e) => { setTinfoilModel(tier, e.target.value); e.target.value = tinfoilModel(tier); }, { list: 'ai-tinfoil-models' })),
+  ];
 }
 
-function modelRow(purpose, label) {
-  return h('label', { class: 'settings-model' },
-    h('span', { class: 'kv-label' }, label),
-    h('input', {
-      type: 'text', class: 'filter', list: 'ai-models', value: modelFor(purpose), placeholder: DEFAULT_MODELS[purpose],
-      autocomplete: 'off', spellcheck: 'false', onchange: (e) => { setModel(purpose, e.target.value); e.target.value = modelFor(purpose); },
-    }));
-}
-
-/* ---------- Ähnliche Fragen (Test) ---------- */
+/* ---------- Ähnliche Fragen ---------- */
 
 const MIN_SCORES = [0.95, 0.9, 0.85, 0.8, 0.75, 0.7];
 let simBox, simRunning = false;
@@ -134,25 +171,23 @@ let simMin = 0.85;
 let simPairs = null; // Ergebnis der letzten Berechnung (alle ≥ 0,7)
 
 function similarSection() {
-  const field = (label, value, def, onchange) => h('label', { class: 'settings-model' },
-    h('span', { class: 'kv-label' }, label),
-    h('input', { type: 'text', class: 'filter', value, placeholder: def, autocomplete: 'off', spellcheck: 'false', onchange }));
   simBox = h('div', { class: 'sim-result' });
   const btn = h('button', { type: 'button', class: 'btn', onclick: () => runSimilar(btn) }, 'Berechnen & vergleichen');
   return [
-    field('Ollama-Server', embedUrl(), DEFAULT_URL, (e) => { setEmbedUrl(e.target.value); e.target.value = embedUrl(); }),
-    field('Embedding-Modell', embedModel(), DEFAULT_MODEL, (e) => { setEmbedModel(e.target.value); e.target.value = embedModel(); }),
+    textField('Embedding-Modell', embedModel(), DEFAULT_MODEL, (e) => { setEmbedModel(e.target.value); e.target.value = embedModel(); },
+      { list: 'ai-local-models' }),
     h('div', { class: 'btn-row' }, btn),
     h('p', { class: 'hint left' },
-      'Test am Computer: berechnet für jede Frage (Dateiname) einen Vektor über den lokalen Ollama-Server, speichert ' +
-      `sie in .picker/${EMBED_FILE} (danach nur Neues und Geändertes) und zeigt die ähnlichsten Fragenpaare. ` +
-      'Einrichtung: siehe README, Abschnitt „Ähnliche Fragen“.'),
+      'Am Computer mit lokalem Server (oben): berechnet für jede Frage (Dateiname) einen Vektor, speichert sie in ' +
+      `.picker/${EMBED_FILE} (danach nur Neues und Geändertes) und zeigt die ähnlichsten Fragenpaare. „Mit Sprachmodell ` +
+      'prüfen“ lässt das schnelle Modell entscheiden, ob zwei Fragen wirklich dasselbe fragen. Einrichtung: README, „Ähnliche Fragen“.'),
     simBox,
   ];
 }
 
 async function runSimilar(btn) {
   if (simRunning) return;
+  if (!localOn()) return ui.toast('Erst oben unter KI den lokalen Server einschalten (Testen).', 4000);
   if (!(await core.hasPermission(true))) return ui.toast('Zugriff auf den Vault wurde nicht erlaubt.', 4000);
   simRunning = true;
   btn.disabled = true;
@@ -164,7 +199,7 @@ async function runSimilar(btn) {
     const save = (st) => core.writeAppFile(EMBED_FILE, JSON.stringify(st));
     const t0 = Date.now();
     const { computed, total } = await updateStore(store, core.list(), {
-      url: embedUrl(), model, save,
+      model, save,
       onProgress: (done, all) => { status.textContent = all ? `Berechne Vektoren … ${done} / ${all}` : 'Alle Vektoren aktuell.'; },
     });
     status.textContent = `${total} Fragen, ${computed} neu berechnet (${((Date.now() - t0) / 1000).toFixed(1)} s). Vergleiche …`;
@@ -182,6 +217,28 @@ async function runSimilar(btn) {
   }
 }
 
+/** Die angezeigten Paare (ab Schwelle) vom schnellen Sprachmodell prüfen lassen: dieselbe Frage oder nur verwandt. */
+async function judgePairs(btn, status) {
+  if (simRunning) return;
+  simRunning = true;
+  btn.disabled = true;
+  const title = (path) => core.get(path)?.title ?? '';
+  const todo = simPairs.filter((p) => p.score >= simMin && judgedSame(title(p.a), title(p.b)) === undefined);
+  const t0 = Date.now();
+  try {
+    for (let i = 0; i < todo.length; i++) {
+      status.textContent = `Prüfe mit Sprachmodell … ${i + 1} / ${todo.length}`;
+      await sameQuestion(title(todo[i].a), title(todo[i].b));
+    }
+    status.textContent = `${todo.length} Paare geprüft (${((Date.now() - t0) / 1000).toFixed(1)} s).`;
+  } catch (err) {
+    status.textContent = 'Prüfen fehlgeschlagen: ' + err.message;
+  } finally {
+    simRunning = false;
+    renderPairs(status);
+  }
+}
+
 function renderPairs(status) {
   const where = (path) => {
     const n = core.get(path);
@@ -190,25 +247,39 @@ function renderPairs(status) {
   };
   const title = (path) => (core.get(path)?.title ?? path) + '?';
   const shown = simPairs.filter((p) => p.score >= simMin);
+  const verdict = (p) => judgedSame(title(p.a).slice(0, -1), title(p.b).slice(0, -1));
+  const same = shown.filter((p) => verdict(p) === true);
+  const open = shown.filter((p) => verdict(p) === undefined);
+  const related = shown.filter((p) => verdict(p) === false);
+  const judge = h('button', { type: 'button', class: 'btn small', onclick: () => judgePairs(judge, status) },
+    open.length ? `Mit Sprachmodell prüfen (${open.length})` : 'Alle geprüft');
+  judge.disabled = !open.length;
+  const list = (pairs) => h('ul', { class: 'sim-list' }, ...pairs.map((p) => h('li', { class: 'sim-pair' },
+    h('span', { class: 'sim-score' }, p.score.toFixed(2).replace('.', ',')),
+    h('div', { class: 'sim-qs' }, ...[p.a, p.b].map((path) =>
+      h('button', { type: 'button', class: 'sim-q', onclick: () => ui.openNote(path) },
+        h('span', {}, title(path)), h('small', {}, where(path))))))));
   const select = h('select', { class: 'filter sim-min', onchange: (e) => { simMin = +e.target.value; renderPairs(status); } },
     ...MIN_SCORES.map((m) => h('option', { value: m, selected: m === simMin }, `ab ${m.toFixed(2).replace('.', ',')}`)));
-  simBox.replaceChildren(status,
-    h('div', { class: 'sim-head' }, h('span', {}, `${shown.length} Paare`), select),
-    shown.length
-      ? h('ul', { class: 'sim-list' }, ...shown.map((p) => h('li', { class: 'sim-pair' },
-        h('span', { class: 'sim-score' }, p.score.toFixed(2).replace('.', ',')),
-        h('div', { class: 'sim-qs' }, ...[p.a, p.b].map((path) =>
-          h('button', { type: 'button', class: 'sim-q', onclick: () => ui.openNote(path) },
-            h('span', {}, title(path)), h('small', {}, where(path))))))))
-      : h('p', { class: 'hint left' }, 'Keine Paare ab dieser Ähnlichkeit – Schwelle senken.'));
+  const section = (label, pairs) => (pairs.length ? [h('h3', { class: 'sim-group' }, `${label} (${pairs.length})`), list(pairs)] : []);
+  simBox.replaceChildren(...[status,
+    h('div', { class: 'sim-head' }, h('span', {}, `${shown.length} Paare`), select, judge),
+    ...(shown.length ? [] : [h('p', { class: 'hint left' }, 'Keine Paare ab dieser Ähnlichkeit – Schwelle senken.')]),
+    ...section('Dieselbe Frage', same),
+    ...section(same.length || related.length ? 'Noch nicht geprüft' : 'Ähnlich', open),
+    ...section('Nur verwandt', related)]);
 }
 
-/** Verfügbare Modelle als Vorschläge für die Modell-Felder (einmal pro Sitzung, nur mit Key und online). */
+/** Verfügbare Modelle als Vorschläge für die Modell-Felder (einmal pro Sitzung; Tinfoil nur eingeschaltet mit Key). */
 let modelsLoaded = false;
 function loadModels() {
-  if (modelsLoaded || !apiKey() || !navigator.onLine) return;
+  if (localOn()) {
+    listLocalModels({ signal: AbortSignal.timeout(3000) })
+      .then((ids) => localModels.replaceChildren(...ids.map((id) => h('option', { value: id }))), () => {});
+  }
+  if (modelsLoaded || !tinfoilOn() || !apiKey() || !navigator.onLine) return;
   modelsLoaded = true;
-  listModels().then((ids) => modelList.replaceChildren(...ids.map((id) => h('option', { value: id }))),
+  listModels().then((ids) => tinfoilModels.replaceChildren(...ids.map((id) => h('option', { value: id }))),
     () => { modelsLoaded = false; });
 }
 
@@ -236,7 +307,8 @@ export default {
     ui = _ui;
     core = ui.core;
     info = h('div', { class: 'kv' });
-    modelList = h('datalist', { id: 'ai-models' });
+    localModels = h('datalist', { id: 'ai-local-models' });
+    tinfoilModels = h('datalist', { id: 'ai-tinfoil-models' });
     promptsInfo = h('div', {});
     logEl = h('div', {});
     btnSync = h('button', { type: 'button', class: 'btn', onclick: () => run(false) }, 'Jetzt abgleichen');
@@ -247,19 +319,25 @@ export default {
       nameInput(),
       h('p', { class: 'hint left' }, 'Steht beim Export einer VL (Study → VL → PDF) unter dem Titel.'),
       h('h2', { class: 'section' }, 'KI'),
-      aiRow(),
       h('p', { class: 'hint left' },
         'Für alle KI-Funktionen: Korrektur und Prompts auf markierten Text am Computer, KI-Aktionen an einer Frage ' +
-        '(Punkt lang drücken bzw. Rechtsklick) auch am Handy. Läuft über Tinfoil: verschlüsselt, die Enclave wird vor jeder Sitzung ' +
-        'geprüft. Der Key bleibt in diesem Browser. Key unter tinfoil.sh anlegen.'),
-      modelRow('correct', 'Modell Korrektur'),
-      modelRow('prompt', 'Modell Prompts'),
-      modelList,
+        '(Punkt lang drücken bzw. Rechtsklick) auch am Handy, ähnliche Fragen im Editor. Zuerst wird das lokale Modell ' +
+        'gefragt (nichts verlässt den Computer), sonst Tinfoil, wenn eingeschaltet. Ohne beides gibt es einfach keine KI-Funktionen.'),
+      h('h3', { class: 'settings-sub' }, 'Lokal (Ollama)'),
+      ...localAI(),
       h('p', { class: 'hint left' },
-        'Korrektur: Doppelklick auf ein Wort (schnelles Modell ohne Thinking). Prompts: Text markieren, Prompt oder ' +
-        'Abkürzung eintippen (Strg/Cmd+K), Enter. Leeres Feld = Standard.'),
+        'Läuft auf dem eigenen Computer (Einrichtung: README, „KI lokal“). Erst einschalten, wenn Ollama läuft – vorher ' +
+        'fragt die App den lokalen Server gar nicht an. Schnell: Korrektur (Doppelklick auf ein Wort), Fragen vergleichen. ' +
+        'Gut: Prompts (Text markieren, Strg/Cmd+K). Leeres Feld = Standard.'),
+      localModels,
+      h('h3', { class: 'settings-sub' }, 'Tinfoil (Cloud, verschlüsselt)'),
+      ...tinfoilAI(),
+      h('p', { class: 'hint left' },
+        'Option B, z. B. am Handy oder ohne lokalen Server: verschlüsselt, die Enclave wird vor jeder Sitzung geprüft. ' +
+        'Wird nur genutzt, wenn eingeschaltet. Der Key bleibt in diesem Browser; Key unter tinfoil.sh anlegen.'),
+      tinfoilModels,
       promptsInfo,
-      h('h2', { class: 'section' }, 'Ähnliche Fragen (Test)'),
+      h('h2', { class: 'section' }, 'Ähnliche Fragen'),
       ...similarSection(),
       h('h2', { class: 'section' }, 'Darstellung'),
       themeRow(),

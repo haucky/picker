@@ -216,6 +216,7 @@ async function openVL(deck, day, focus, btn) {
   ed.conflicts = createConflicts({
     ui, mode: 'vl',
     exclude: (n) => !!ed && ed.originals.some((o) => o.path === n.path),
+    isNew: (title) => !!ed && !ed.originals.some((o) => o.title.toLowerCase() === title.toLowerCase()),
     onChange: () => { if (ed?.cm) { update(); storeDraft(); } },
   });
   if (restore) ed.conflicts.load(draft.conflicts);
@@ -426,7 +427,7 @@ function openQuestionMenu(line, rect) {
         enterkeyhint: 'send', onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); runPrompt(input.value); } } });
       parts.push(input, ...ui.prompts.list().slice(0, 3).map((pr) => item('✦ ' + pr.name, () => runPrompt(pr.name), { title: pr.prompt })));
     } else if (ui.prompts) {
-      parts.push(h('div', { class: 'qmenu-note' }, navigator.onLine ? 'KI: Tinfoil-Key unter Settings eintragen' : 'KI: offline'));
+      parts.push(h('div', { class: 'qmenu-note' }, 'KI: unter Settings → KI einrichten (lokal oder Tinfoil)'));
     }
     parts.push(h('div', { class: 'qmenu-sep' }), item('✎ Umbenennen', showRename));
     el.replaceChildren(...parts);
@@ -495,7 +496,7 @@ async function save() {
   const states = new Map(ed.states);
   const plan = planSave(text, ed.originals, {
     folder: ed.folder, base: ed.tags, day: ed.day, exists, states, renames: ed.renames,
-    existing: ed.conflicts.existing, resolutions: ed.conflicts.resolutions,
+    existing: ed.conflicts.existing, resolutions: ed.conflicts.resolutions, similarMerge: ed.conflicts.similarMerge,
   });
   if (plan.errors.length) {
     update();

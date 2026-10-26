@@ -319,7 +319,8 @@ export function newNoteText(tags, body, order, state = 'open') {
  *        existsHint: Zusatz zur Fehlermeldung, wenn es eine neue Datei schon gibt (optional),
  *        order: false = neue Notizen ohne study-order (z. B. Diary),
  *        existing(title) → Notiz mit diesem Namen irgendwo im Vault (außer denen dieses Dokuments) oder null,
- *        resolutions: Map Titel (klein) → 'merge' | 'here' | 'answer' (Entscheidung für Fragen, die es schon gibt) }.
+ *        resolutions: Map Titel (klein) → 'merge' | 'here' | 'answer' (Entscheidung für Fragen, die es schon gibt),
+ *        similarMerge(title) → { path, action } | null (Entscheidung für eine ähnliche Frage mit anderem Namen) }.
  * Neue Fragen, die es schon gibt: mit Entscheidung in `merges` ({ path (vorhandene Notiz), title, line, day, order,
  * body, tags, action }), sonst ein Fehler.
  * Fragen unter einer Datumszeile mit anderem Datum bekommen dessen #date/… (und gehören danach zu einer anderen VL).
@@ -366,6 +367,9 @@ export function planSave(doc, originals, ctx) {
       const action = ctx.resolutions?.get(it.title.toLowerCase());
       if (action) merges.push({ path: ex.path, title: it.title, line: it.line, day: itemDay, order: i + 1, body: it.body, tags: it.tags, action });
       else errors.push({ line: it.line, msg: `„${it.title}?“ gibt es schon (${ex.path}) – „!“ hinter der Frage antippen`, conflict: true });
+    } else if (ctx.similarMerge?.(it.title)) {
+      const sm = ctx.similarMerge(it.title);
+      merges.push({ path: sm.path, title: it.title, line: it.line, day: itemDay, order: i + 1, body: it.body, tags: it.tags, action: sm.action });
     } else {
       const path = (ctx.folder ? ctx.folder + '/' : '') + it.title + '.md';
       if (day != null) redated.push(it.title);

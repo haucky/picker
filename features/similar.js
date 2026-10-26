@@ -1,22 +1,20 @@
-// Ähnliche Fragen (Test): Embeddings der Fragen (Dateinamen) über einen lokalen Ollama-Server am Computer berechnen,
-// in .picker/embeddings.json im Vault ablegen (synct mit, das Handy kann damit vergleichen) und die ähnlichsten
-// Fragenpaare finden. Nur die Logik; die Oberfläche steht in Settings (sync.js).
+// Ähnliche Fragen: Embeddings der Fragen (Dateinamen) über den lokalen Ollama-Server (llm.js: localUrl) berechnen,
+// in .picker/embeddings.json im Vault ablegen (synct mit) und ähnliche Fragen finden. Ob zwei ähnliche Fragen wirklich
+// dasselbe fragen, entscheidet ein Sprachmodell (sameQuestion, Stufe „schnell“). Nur Logik; Oberfläche in Settings
+// (sync.js) und im Editor (conflicts.js).
 import { isConfig } from './srs.js';
+import { localUrl, localOn, chat } from './llm.js';
 import { isStreamsConfig } from './streamsdoc.js';
 import { PROMPTS_PATH } from './prompts.js';
 
 export const FILE = 'embeddings.json';
-export const DEFAULT_URL = 'http://localhost:11434';
 export const DEFAULT_MODEL = 'qwen3-embedding:0.6b';
 const BATCH = 32;
-const URL_KEY = 'embed-url';
 const MODEL_KEY = 'embed-model';
 
 const get = (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
 const set = (k, v, d) => { try { if (v && v !== d) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* egal */ } };
-export const embedUrl = () => get(URL_KEY, DEFAULT_URL);
 export const embedModel = () => get(MODEL_KEY, DEFAULT_MODEL);
-export const setEmbedUrl = (v) => set(URL_KEY, v.trim().replace(/\/+$/, ''), DEFAULT_URL);
 export const setEmbedModel = (v) => set(MODEL_KEY, v.trim(), DEFAULT_MODEL);
 
 /**
@@ -31,9 +29,10 @@ export function promptFor(model) {
 
 /**
  * Wie viele Werte pro Vektor gespeichert werden: Qwen3-Embeddings sind darauf trainiert, dass man sie kürzen kann
- * (256 reichen für Fragen und halten die Datei klein), andere Modelle behalten alle (0). Gespeichert wird als int8.
+ * (1024 = alle beim 0.6B-Modell; die größeren werden darauf gekürzt), andere Modelle behalten alle (0). Gespeichert
+ * wird als int8 (5.000 Fragen ≈ 7 MB).
  */
-export const dimsFor = (model) => (/qwen3/i.test(model) ? 256 : 0);
+export const dimsFor = (model) => (/qwen3/i.test(model) ? 1024 : 0);
 
 /** Notizen, deren Namen verglichen werden (ohne Review.md, Streams.md, Prompts.md). */
 export function questionNotes(notes) {
@@ -41,7 +40,7 @@ export function questionNotes(notes) {
 }
 
 /** Ein Aufruf an Ollama (/api/embed) für mehrere Texte → [[Zahl]]. */
-export async function embed(url, model, texts) {
+export async function embed(model, texts, url = localUrl()) {
   let res;
   try {
     res = await fetch(url + '/api/embed', {
@@ -95,7 +94,7 @@ export function parseStore(text, model) {
  * Berechnet fehlende Vektoren (neue oder umbenannte Notizen) und entfernt die gelöschter. `save(store)` wird
  * zwischendurch aufgerufen, damit ein Abbruch nichts verliert. onProgress(fertig, gesamt).
  */
-export async function updateStore(store, notes, { url, model, save, onProgress = () => {}, signal }) {
+export async function updateStore(store, notes, { model, save, onProgress = () => {}, signal }) {
   const qs = questionNotes(notes);
   const keep = new Set(qs.map((n) => n.path));
   for (const p of Object.keys(store.items)) if (!keep.has(p)) delete store.items[p];
@@ -106,7 +105,7 @@ export async function updateStore(store, notes, { url, model, save, onProgress =
   for (let i = 0; i < todo.length; i += BATCH) {
     if (signal?.aborted) break;
     const batch = todo.slice(i, i + BATCH);
-    const vecs = await embed(url, model, batch.map((n) => prompt + n.title + '?'));
+    const vecs = await embed(model, batch.map((n) => prompt + n.title + '?'));
     batch.forEach((n, k) => { store.items[n.path] = [n.title, pack(vecs[k], store.dims)]; });
     done += batch.length;
     onProgress(done, todo.length);
@@ -138,4 +137,68 @@ export async function similarPairs(store, { min = 0.8, limit = 200, onProgress =
   }
   onProgress(vecs.length, vecs.length);
   return out.sort((x, y) => y.score - x.score).slice(0, limit);
+}
+
+/* ---------- Einzelne Frage (Editor) ---------- */
+
+const dot = (a, b) => { let d = 0; for (let k = 0; k < a.length; k++) d += a[k] * b[k]; return d / (127 * 127); };
+
+/** Gespeicherten Stand für den Editor laden (nur mit eingeschaltetem lokalen Server); null, wenn es keinen gibt. */
+export async function loadStore(core) {
+  if (!localOn()) return null;
+  const model = embedModel();
+  const store = parseStore(await core.readAppFile(FILE).catch(() => null), model);
+  if (!Object.keys(store.items).length) return null;
+  store.vecs = new Map(Object.entries(store.items).map(([p, [, b64]]) => [p, unpack(b64)]));
+  return store;
+}
+
+const vecCache = new Map(); // Modell \0 Titel → Vektor
+
+/** Vektor einer (neuen) Frage über den lokalen Server, gecacht. */
+export async function embedTitle(store, title) {
+  const key = store.model + '\0' + title;
+  if (!vecCache.has(key)) {
+    const [v] = await embed(store.model, [promptFor(store.model) + title + '?']);
+    vecCache.set(key, unpack(pack(v, store.dims)));
+  }
+  return vecCache.get(key);
+}
+
+/** Ähnlichste gespeicherte Fragen zu `vec`: [{ path, score }] (≥ min, höchstens k, ohne skip(path)). */
+export function nearest(store, vec, { min = 0.75, k = 3, skip = () => false } = {}) {
+  const out = [];
+  for (const [path, v] of store.vecs) {
+    if (skip(path)) continue;
+    const score = dot(vec, v);
+    if (score >= min) out.push({ path, score });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, k);
+}
+
+/* ---------- Fragen vergleichen (Sprachmodell) ---------- */
+
+const SAME_SYSTEM = 'Du vergleichst zwei Fragen aus persönlichen Notizen (Lernnotizen oder Tagebuch). Antworte nur mit JA oder NEIN.';
+const judged = new Map(); // „a\0b“ (sortiert, klein) → true/false
+
+const pairKey = (a, b) => [a.toLowerCase(), b.toLowerCase()].sort().join('\0');
+
+/** Schon entschieden? true/false oder undefined. */
+export const judgedSame = (a, b) => judged.get(pairKey(a, b));
+
+/**
+ * Fragen beide nach demselben? (Sprachmodell, Stufe „schnell“; gecacht.) Nur dasselbe Thema oder dieselbe Person
+ * reicht nicht. Wirft, wenn keine KI eingerichtet ist.
+ */
+export async function sameQuestion(a, b, { signal } = {}) {
+  const key = pairKey(a, b);
+  if (judged.has(key)) return judged.get(key);
+  const text = await chat({
+    system: SAME_SYSTEM, purpose: 'judge', maxTokens: 4, temperature: 0, timeout: 30000, signal,
+    user: `Frage 1: ${a}?\nFrage 2: ${b}?\n\nFragen beide nach demselben, sodass dieselbe Antwort beide beantwortet? ` +
+      'Nur dasselbe Thema oder dieselbe Person reicht nicht. Antworte mit JA oder NEIN.',
+  });
+  const same = /^\W*(ja|yes)\b/i.test(text);
+  judged.set(key, same);
+  return same;
 }

@@ -60,7 +60,7 @@ function update() {
 let raf = 0;
 function storeDraft() {
   store(DRAFT_KEY, cm.value.trim() ? cm.value : null);
-  store(RES_KEY, conflicts.resolutions.size ? JSON.stringify(conflicts.toJSON()) : null);
+  store(RES_KEY, JSON.stringify(conflicts.toJSON()));
 }
 
 function onInput() {
@@ -102,7 +102,7 @@ async function save() {
   };
   const plan = planSave(text, [], {
     folder: '', base: baseTags(day), day, exists, existsHint: '', order: false,
-    existing: conflicts.existing, resolutions: conflicts.resolutions,
+    existing: conflicts.existing, resolutions: conflicts.resolutions, similarMerge: conflicts.similarMerge,
   });
   if (plan.errors.length) {
     update();
@@ -180,7 +180,7 @@ export default {
       ui, mode: 'diary',
       onChange: () => { if (cm) { update(); storeDraft(); } },
     });
-    try { conflicts.load(JSON.parse(load(RES_KEY) || '[]')); } catch { /* egal */ }
+    try { conflicts.load(JSON.parse(load(RES_KEY) || 'null')); } catch { /* egal */ }
     root.classList.add('diary-write');
     root.append(
       h('div', { class: 'dw-head' }, h('h2', { class: 'section' }, 'Neue Einträge'), countEl, saveBtn),

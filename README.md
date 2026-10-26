@@ -187,7 +187,7 @@ Notiz-Editor (Suche → Notiz) und VL-Editor (Study) sind derselbe Markdown-Edit
 
 **Korrekturvorschläge (nur am Computer):** Steht der Cursor in einem Wort, das weder in den Wortlisten (Deutsch, Englisch, je ~50.000 häufigste Wörter) noch mindestens zweimal im eigenen Vault vorkommt, erscheinen darunter bis zu 4 Vorschläge – kleinster Tippabstand zuerst, dann das häufigste Wort. Klick oder Alt+1…4 ersetzt das Wort. Fachbegriffe, die man öfter in Notizen verwendet, gelten damit automatisch als bekannt. Die rote Unterkringelung kommt weiter vom Browser.
 
-**KI-Korrektur (nur am Computer):** Doppelklick auf ein Wort öffnet ein kleines Menü: oben sofort die Vorschläge aus dem Wörterbuch (wenn das Wort unbekannt ist), darunter bis zu 5 Vorschläge eines Sprachmodells, sobald sie da sind (Duplikate fallen weg). Klick oder Alt+1…9 ersetzt das Wort; Escape, Klick daneben oder Weitertippen schließt das Menü. An das Modell geht nur der Satz um das Wort. Dafür unter **Settings → KI** einen eigenen [Tinfoil](https://tinfoil.sh)-API-Key eintragen (bleibt im Browser; **Testen** prüft Verbindung und Enclave). Ohne Key oder offline gibt es nur die Wörterbuch-Vorschläge; antwortet das Modell nicht innerhalb von 5 Sekunden, steht „KI-Vorschläge nicht verfügbar“ im Menü. Gleiche Anfragen (Wort + Satz) werden bis zum Neuladen gemerkt.
+**KI-Korrektur (nur am Computer):** Doppelklick auf ein Wort öffnet ein kleines Menü: oben sofort die Vorschläge aus dem Wörterbuch (wenn das Wort unbekannt ist), darunter bis zu 5 Vorschläge eines Sprachmodells, sobald sie da sind (Duplikate fallen weg). Klick oder Alt+1…9 ersetzt das Wort; Escape, Klick daneben oder Weitertippen schließt das Menü. An das Modell geht nur der Satz um das Wort. Dafür unter **Settings → KI** ein lokales Modell oder Tinfoil einrichten (siehe „KI: lokal oder Tinfoil“). Ohne KI gibt es nur die Wörterbuch-Vorschläge; antwortet das Modell nicht innerhalb von 5 Sekunden, steht „KI-Vorschläge nicht verfügbar“ im Menü. Gleiche Anfragen (Wort + Satz) werden bis zum Neuladen gemerkt.
 
 **KI-Prompts auf markierten Text (nur am Computer):** Text markieren – darunter erscheint ein Eingabefeld (es nimmt den Fokus nicht weg, Weitertippen ersetzt wie gewohnt die Markierung; **Strg/Cmd+K** springt hinein). Dort einen eigenen Prompt tippen oder eine Abkürzung wie `summary` oder `explain` (Vorschläge darunter antippen, Tab ergänzt; hinter der Abkürzung sind weitere Anweisungen möglich, z. B. `summary auf Englisch`). Enter schickt Prompt + markierten Text ans Modell, die Antwort erscheint nach und nach in einem kleinen Dialog: **Einfügen** setzt sie in eine neue Zeile unter den Cursor und schließt, **Schließen**/Escape schließt ohne Einfügen, **Kopieren** kopiert sie.
 
@@ -201,7 +201,29 @@ Fasse den Text in höchstens 5 Stichpunkten zusammen.
 Erkläre {{text}} so, dass es ein Kind versteht.
 ```
 
-Die Anfragen laufen über das offizielle Tinfoil-SDK (`vendor/tinfoil.js`, wird erst bei Bedarf geladen): Es prüft die Attestierung der Enclave und verschlüsselt Anfragen Ende-zu-Ende. Der Zugriff aufs Modell steckt in `features/llm.js` (`chat()` mit Streaming, `listModels()`, `extractJSON()`, Standard-Modelle in `DEFAULT_MODELS`) und ist für weitere KI-Funktionen gedacht. Die Modelle für Korrektur und Prompts lassen sich unter **Settings → KI** ändern (Vorschläge aus der aktuellen Modell-Liste von Tinfoil; leer = Standard: `gemma4-31b` für die Korrektur, `deepseek-v4-1-flash` für Prompts). SDK aktualisieren: Version in `vendor/tinfoil/package.json`, dann `vendor/tinfoil/build.sh`.
+### KI: lokal oder Tinfoil
+
+Alle KI-Funktionen (Korrektur, Prompts, KI-Aktionen an einer Frage, ähnliche Fragen) laufen über `features/llm.js` (`chat()` mit Streaming). **Standard ist ein lokales Modell** über [Ollama](https://ollama.com) am eigenen Computer – nichts verlässt das Gerät. **Tinfoil** ([tinfoil.sh](https://tinfoil.sh), verschlüsselt, die Enclave wird vor jeder Sitzung geprüft) ist Option B, z. B. am Handy: Es wird nur genutzt, wenn es unter **Settings → KI** eingeschaltet ist (auch mit eingetragenem Key) und lokal aus oder nicht erreichbar ist. Ohne beides gibt es keine KI-Funktionen, alles andere funktioniert normal. Der lokale Server wird erst angesprochen, wenn er eingeschaltet ist – wer kein Ollama hat, bekommt also auch keine Rückfrage von Chrome.
+
+Zwei Stufen, je Anbieter in Settings änderbar (leer = Standard):
+
+| Stufe | wofür | lokal (Standard) | Tinfoil (Standard) |
+|---|---|---|---|
+| Schnell | Korrektur, Fragen vergleichen | `qwen3.5:4b` (~3,5 GB) | `gemma4-31b` |
+| Gut | Prompts, KI-Aktionen | `qwen3.5:9b` (~7 GB) | `deepseek-v4-1-flash` |
+
+Lokal läuft immer ohne „Thinking“ (schneller, für kurze Antworten reicht es). Qwen 3.5 ist mehrsprachig und schreibt gutes Deutsch; beide laufen auf einem M3 (16 GB). Mit 8 GB RAM für beide Stufen `qwen3.5:4b` nehmen. Alternativen zum Ausprobieren: `gemma4:e4b` (schnell), `gemma4:12b` (gut).
+
+**KI lokal einrichten (Mac, einmalig):**
+
+1. Ollama installieren: App von [ollama.com/download](https://ollama.com/download) oder `brew install ollama`.
+2. Modelle laden (Terminal): `ollama pull qwen3.5:4b`, `ollama pull qwen3.5:9b` und für ähnliche Fragen `ollama pull qwen3-embedding:0.6b`. Jeweils warten, bis `success` dasteht.
+3. Ollama erlauben, Anfragen von der App anzunehmen (sonst blockt der Browser):
+   - mit der Ollama-App: `launchctl setenv OLLAMA_ORIGINS "https://oma.app"`, dann die Ollama-App beenden und neu starten (gilt bis zum Neustart des Macs; danach wiederholen oder in ein Login-Skript schreiben);
+   - ohne App: Ollama-App beenden und `OLLAMA_ORIGINS="https://oma.app" ollama serve` im Terminal laufen lassen.
+4. In der App **Settings → KI → Lokal → Testen**: prüft Server und Modelle (fehlt eins, steht der `ollama pull`-Befehl da) und schaltet „Lokales Modell verwenden“ ein. Chrome fragt beim ersten Mal, ob die Seite auf Geräte im lokalen Netzwerk zugreifen darf → **Zulassen** (zurücksetzen über das Schloss-Symbol neben der Adresse → Website-Einstellungen).
+
+Tinfoil: SDK `vendor/tinfoil.js` (wird erst bei der ersten Tinfoil-Anfrage geladen) prüft die Attestierung und verschlüsselt Ende-zu-Ende. SDK aktualisieren: Version in `vendor/tinfoil/package.json`, dann `vendor/tinfoil/build.sh`.
 
 CodeMirror liegt fertig gebündelt in `vendor/codemirror.js` (die App braucht weiterhin kein npm). Neu bauen bzw. aktualisieren: Versionen in `vendor/codemirror/package.json` anpassen, dann `vendor/codemirror/build.sh`.
 
@@ -222,29 +244,22 @@ Damit die Suche schnell ist, hält die App eine Kopie aller Notizen im Browser-S
 ### Settings
 
 - **Name:** steht beim PDF-Export einer VL unter dem Titel (wird nur im Browser gespeichert).
-- **KI:** eigener Tinfoil-API-Key für alle KI-Funktionen (nur im Browser gespeichert) mit **Testen**, Modell für die Korrektur und für Prompts, gefundene Abkürzungen aus `Prompts.md`.
-- **Ähnliche Fragen (Test):** siehe unten.
+- **KI:** lokal (Ollama: an/aus, Server, Modelle Schnell/Gut, **Testen**) und Tinfoil (an/aus, Key, Modelle, **Testen**), gefundene Abkürzungen aus `Prompts.md` – siehe „KI: lokal oder Tinfoil“.
+- **Ähnliche Fragen:** siehe unten.
 - **Darstellung** (Automatisch / Hell / Dunkel).
 - **Abgleich:** wann und wie zuletzt abgeglichen wurde, mit **Jetzt abgleichen** und **Komplett abgleichen**.
 - Darunter die letzten Einträge des Plugin-Logs (zur Kontrolle, ob das Plugin läuft).
 
-### Ähnliche Fragen (Test)
+### Ähnliche Fragen
 
-Findet Fragen, die dasselbe meinen, aber anders heißen (z. B. „Was ist ein Equi-Join?“ ↔ „Wozu ein Join mit Gleichheitsbedingung?“). Dafür bekommt jede Frage (nur der Dateiname, nicht der Inhalt) einen Vektor von einem Embedding-Modell, das **lokal am Computer** in [Ollama](https://ollama.com) läuft – nichts geht ins Internet. Die Vektoren stehen in `.picker/embeddings.json` im Vault (gekürzt und kompakt gespeichert, wenige MB; synct mit). Beim nächsten Mal werden nur neue und umbenannte Fragen berechnet; bei einem anderen Modell alle neu (Vektoren verschiedener Modelle sind nicht vergleichbar).
+Findet Fragen, die dasselbe meinen, aber anders heißen (z. B. „Was ist ein Equi-Join?“ ↔ „Wozu ein Join mit Gleichheitsbedingung?“). Zwei Stufen, beide lokal (siehe „KI lokal einrichten“, Modell `qwen3-embedding:0.6b`):
 
-**Settings → Ähnliche Fragen → Berechnen & vergleichen** zeigt die ähnlichsten Fragenpaare (Schwelle wählbar, Fragen antippen öffnet sie). Noch ein Test: im Editor erscheinen ähnliche Fragen (noch) nicht.
+1. **Embeddings:** Jede Frage (nur der Dateiname, nicht der Inhalt) bekommt einen Vektor. Die Vektoren stehen in `.picker/embeddings.json` im Vault (int8, 1024 Werte, bei 5.000 Fragen ≈ 7 MB; synct mit). Beim nächsten Mal werden nur neue und umbenannte Fragen berechnet; bei einem anderen Modell alle neu. Das findet Kandidaten – aber auch Fragen, die nur dasselbe Thema oder dieselbe Person betreffen.
+2. **Sprachmodell (Stufe „schnell“):** entscheidet pro Kandidat, ob beide Fragen wirklich dasselbe fragen.
 
-**Einrichtung (Mac, einmalig):**
+**Settings → Ähnliche Fragen → Berechnen & vergleichen** berechnet die Vektoren und zeigt die ähnlichsten Paare (Schwelle wählbar, Fragen antippen öffnet sie). **Mit Sprachmodell prüfen** teilt sie in „Dieselbe Frage“ und „Nur verwandt“. Größeres Embedding-Modell: `ollama pull qwen3-embedding:4b` und Namen dort eintragen.
 
-1. Ollama installieren: App von [ollama.com/download](https://ollama.com/download) oder `brew install ollama`.
-2. Modell laden (Terminal): `ollama pull qwen3-embedding:0.6b` (~600 MB–1,2 GB). Größere: `qwen3-embedding:4b`, `qwen3-embedding:8b` – Name dann in Settings unter „Embedding-Modell“ eintragen.
-3. Ollama erlauben, Anfragen von der App anzunehmen (sonst blockt der Browser):
-   - mit der Ollama-App: `launchctl setenv OLLAMA_ORIGINS "https://oma.app"`, dann die Ollama-App beenden und neu starten (gilt bis zum Neustart des Macs; danach wiederholen oder in ein Login-Skript schreiben);
-   - ohne App: Ollama-App beenden und `OLLAMA_ORIGINS="https://oma.app" ollama serve` im Terminal laufen lassen.
-4. Prüfen: `curl http://localhost:11434/api/embed -d '{"model":"qwen3-embedding:0.6b","input":["Was ist ein Join?"]}'` – liefert eine lange Zahlenliste.
-5. In der App **Berechnen & vergleichen**. Chrome fragt beim ersten Mal, ob die Seite auf Geräte im lokalen Netzwerk zugreifen darf → **Zulassen** (sonst „nicht erreichbar“; zurücksetzen über das Schloss-Symbol neben der Adresse → Website-Einstellungen).
-
-Server-Adresse (Standard `http://localhost:11434`) und Modell (Standard `qwen3-embedding:0.6b`) sind in Settings änderbar. Ollama muss nur zum Berechnen laufen.
+**Im Editor** (VL-Editor, Diary → Schreiben; mit eingeschaltetem lokalem Server und einmal berechneten Vektoren): Beim Verlassen der Zeile einer neuen Frage werden die 3 ähnlichsten vorhandenen Fragen (ab 0,75) dem Sprachmodell vorgelegt. Sagt es „dieselbe Frage“, steht ein violettes **≈** dahinter. Antippen öffnet die vorhandene Frage im Nebenfenster mit denselben Optionen wie beim „!“ (Zusammenführen bzw. als Antwort anhängen – in die ähnliche Frage, Link einfügen) und **✕ Keine Dublette**. Anders als das „!“ blockiert das „≈“ das Speichern nicht. Fragen, die nach dem letzten Berechnen dazukamen, werden erst nach dem nächsten **Berechnen & vergleichen** gefunden.
 
 ## Obsidian-Plugin „Picker Changelog“
 

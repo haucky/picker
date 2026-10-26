@@ -563,6 +563,10 @@ img.img-big { max-width: 100%; }
 .settings-key .filter { flex: 1; }
 .settings-model { display: flex; align-items: center; gap: 12px; }
 .settings-model .filter { flex: 1; min-width: 0; }
+.settings-toggle { display: flex; align-items: center; gap: 8px; flex: 1; min-height: 40px; }
+.settings-toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+.settings-sub { font-size: .9rem; margin: 10px 0 0; color: var(--text-2); }
+.sim-group { font-size: .85rem; margin: 10px 0 0; color: var(--text-2); }
 .sim-result { display: flex; flex-direction: column; gap: 8px; }
 .sim-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .85rem; }
 .sim-min { width: auto; }
@@ -702,6 +706,7 @@ img.img-big { max-width: 100%; }
   user-select: none; -webkit-user-select: none;
 }
 .md-editor .cm-badge.open { background: var(--orange); color: var(--bg); }
+.md-editor .cm-badge.similar { background: transparent; color: var(--violet); border: 1px solid var(--violet); line-height: 18px; }
 .md-editor .cm-badge.resolved { background: transparent; color: var(--green); border: 1px solid var(--green); line-height: 18px; }
 .qconf-menu { width: min(340px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow: auto; }
 .qconf-preview { margin: 0 6px 6px; padding: 8px 10px; border-radius: 8px; background: var(--bg); font-size: .85rem; display: flex; flex-direction: column; gap: 4px; }

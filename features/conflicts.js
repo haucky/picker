@@ -2,7 +2,12 @@
 // wird, unterkringelt mit „!“ dahinter. Das „!“ öffnet die vorhandene Frage im Nebenfenster (peek.js: Frage, Tags,
 // Inhalt direkt bearbeiten) und die Optionen: Zusammenführen bzw. als Antwort anhängen (ausgeführt beim Speichern) und
 // Link einfügen. [[Links]] im Editor öffnen dasselbe Nebenfenster. Logik ohne DOM (planSave, applyMerge): studydoc.js.
+//
+// Ähnliche Fragen (anderer Name, gleiche Bedeutung): mit eingeschaltetem lokalem Server und berechneten Embeddings
+// (similar.js) wird eine neue Frage beim Verlassen der Zeile mit den ähnlichsten vorhandenen verglichen; sagt das
+// schnelle Sprachmodell „dieselbe Frage“, steht ein „≈“ dahinter – gleiche Optionen, aber es blockiert nichts.
 import { h } from './dom.js';
+import { loadStore, embedTitle, nearest, sameQuestion } from './similar.js';
 import { popMenu, closeMenu, questionLines } from './qeditor.js';
 import { parseQuestion, parseDayLine } from './studydoc.js';
 import { openPeek, closePeek, peekBeside, inPeek } from './peek.js';
@@ -22,11 +27,16 @@ const LABEL = { merge: 'wird zusammengeführt', here: 'wird zusammengeführt und
 
 /**
  * opts: { ui, mode: 'vl' | 'diary', exclude(note) → true für Notizen, die zum Dokument selbst gehören,
+ *         isNew(title) → false für Fragen, die nicht auf Ähnlichkeit geprüft werden (z. B. schon gespeicherte der VL),
  *         onChange() (Markierungen/Entwurf/Hinweise neu, z. B. nach einer Entscheidung oder einer Änderung im Vault) }.
  */
-export function createConflicts({ ui, mode, exclude = () => false, onChange }) {
+export function createConflicts({ ui, mode, exclude = () => false, isNew = () => true, onChange }) {
   const core = ui.core;
-  const resolutions = new Map(); // Titel (klein) → Entscheidung
+  const resolutions = new Map(); // Titel (klein) → Entscheidung (gleicher Name)
+  const similar = new Map();     // Titel (klein) → 'pending' | null (nichts) | { path, score } (ähnliche Frage)
+  const simRes = new Map();      // Titel (klein) → { action, path } (Entscheidung bei ähnlicher Frage)
+  const dismissed = new Set();   // Titel (klein): „keine Dublette“
+  let store;                     // Promise der Embeddings (similar.js) oder null
   let cm = null;
   let active = -1;   // Zeile mit dem Cursor: dort wird (noch) nicht geprüft
   let index = null;  // Titel (klein) → [Notiz]
@@ -104,6 +114,68 @@ export function createConflicts({ ui, mode, exclude = () => false, onChange }) {
     }
   }
 
+  /* ---------- Ähnliche Fragen ---------- */
+
+  /** Ähnliche vorhandene Frage (vom Sprachmodell bestätigt) oder null. */
+  function similarTo(title) {
+    const key = title.toLowerCase();
+    const m = similar.get(key);
+    if (!m || m === 'pending' || dismissed.has(key)) return null;
+    const note = core.get(m.path);
+    return note && !exclude(note) ? { note, score: m.score } : null;
+  }
+
+  /** Neue Frage prüfen (im Hintergrund): Embedding → ähnlichste vorhandene → Sprachmodell. */
+  async function check(title) {
+    const key = title.toLowerCase();
+    if (similar.has(key) || existing(title) || !isNew(title)) return;
+    similar.set(key, 'pending');
+    let found = null;
+    try {
+      store ??= loadStore(core).catch(() => null);
+      const st = await store;
+      if (st) {
+        const vec = await embedTitle(st, title);
+        const cands = nearest(st, vec, { skip: (path) => { const n = core.get(path); return !n || exclude(n) || n.title.toLowerCase() === key; } });
+        for (const c of cands) {
+          if (await sameQuestion(title, core.get(c.path).title)) { found = { path: c.path, score: c.score }; break; }
+        }
+      }
+    } catch { /* Server weg, keine KI: dann eben keine Ähnlichkeit */ }
+    similar.set(key, found);
+    if (found && cm) { cm.refresh(); onChange(); }
+  }
+
+  function showSimilar(line, rect) {
+    const q = parseQuestion(lineText(line));
+    const sim = q && similarTo(q.title);
+    if (!sim) return;
+    const key = q.title.toLowerCase();
+    const chosen = simRes.get(key)?.path === sim.note.path ? simRes.get(key).action : null;
+    const decide = (action) => {
+      if (action) simRes.set(key, { action, path: sim.note.path }); else simRes.delete(key);
+      closeMenu();
+      cm.refresh();
+      onChange();
+      if (!peekBeside()) showSimilar(line);
+    };
+    const label = `Ähnlich (${sim.score.toFixed(2).replace('.', ',')})` + (chosen ? ` – ${LABEL[chosen]}` : '');
+    const options = [
+      ...ACTIONS[mode].map(([a, text, title]) => ({ label: text, title, accent: a === chosen, onClick: () => decide(a) })),
+      { label: '🔗 Link einfügen', title: `[[${sim.note.title}]] ans Ende deiner Frage`, onClick: () => { closeMenu(); insertLink(line, sim.note.title); } },
+      { label: '✕ Keine Dublette', title: 'Hinweis ausblenden', onClick: () => { dismissed.add(key); simRes.delete(key); closeMenu(); closePeek(); cm.refresh(); onChange(); } },
+      ...(chosen ? [{ label: 'Entscheidung aufheben', onClick: () => decide(null) }] : []),
+    ];
+    openPeek(ui, sim.note, { label, actions: options, openLink: peekLink, onSaved: () => { cm?.refresh(); onChange(); } });
+    if (peekBeside() && rect) {
+      popMenu(rect, (el) => el.replaceChildren(
+        h('div', { class: 'qmenu-label' }, `Ähnliche Frage gibt es schon (${sim.score.toFixed(2).replace('.', ',')}):`),
+        ...options.map((o) => h('button', {
+          type: 'button', role: 'menuitem', class: 'qmenu-item' + (o.accent ? ' accent' : ''), title: o.title || '', onclick: o.onClick,
+        }, o.label))), 'qconf-menu', inPeek);
+    }
+  }
+
   /** [[Link]] im Editor angetippt: verlinkte Notiz im Nebenfenster (wie Obsidian: Pfad, sonst Dateiname). */
   function peekLink(target) {
     const want = String(target).split('#')[0].trim().toLowerCase().replace(/\.md$/, '');
@@ -123,12 +195,21 @@ export function createConflicts({ ui, mode, exclude = () => false, onChange }) {
     attach(editor) { cm = editor; },
     /** Editor geschlossen: nicht mehr auf Änderungen im Vault hören. */
     destroy() { off(); cm = null; closeMenu(); closePeek(true); },
+    /** Für planSave: ähnliche Frage, bei der zusammengeführt bzw. angehängt werden soll → { path, action } oder null. */
+    similarMerge(title) {
+      const sim = similarTo(title);
+      const r = simRes.get(title.toLowerCase());
+      return sim && r && r.path === sim.note.path ? r : null;
+    },
     /** Für den Editor: [[Link]] im Nebenfenster öffnen. */
     openLink: (target) => peekLink(target),
 
     /** Zeile mit dem Cursor wechselt: die verlassene Frage wird jetzt geprüft. */
     setActive(line) {
       if (line === active) return;
+      // die verlassene Zeile: neue Frage auf ähnliche prüfen
+      const left = active >= 0 && cm ? parseQuestion(lineText(active)) : null;
+      if (left) check(left.title);
       active = line;
       cm?.refresh();
       onChange();
@@ -138,7 +219,17 @@ export function createConflicts({ ui, mode, exclude = () => false, onChange }) {
     marks(q, line) {
       if (line === active || !cm) return [];
       const ex = existing(q.title);
-      if (!ex) return [];
+      if (!ex) {
+        const sim = similarTo(q.title);
+        if (!sim) return [];
+        const r = simRes.get(q.title.toLowerCase());
+        const res = r && r.path === sim.note.path ? r.action : null;
+        return [{ line, badge: {
+          at: q.tagsAt, text: res ? BADGE[res] : '≈', class: res ? 'resolved' : 'similar',
+          title: res ? `Ähnlich zu „${sim.note.title}?“ – ${LABEL[res]}` : `Ähnlich zu „${sim.note.title}?“ – antippen`,
+          onClick: showSimilar,
+        } }];
+      }
       const res = resolutions.get(q.title.toLowerCase());
       const out = [];
       if (!res) out.push({ line, from: 0, to: q.tagsAt, class: 'cm-conflict' });
@@ -156,9 +247,15 @@ export function createConflicts({ ui, mode, exclude = () => false, onChange }) {
         .map((it) => ({ line: it.line, msg: `„${it.title}?“ gibt es schon – „!“ hinter der Frage antippen` }));
     },
 
-    /** Für Entwürfe: [[Titel, Entscheidung]]. */
-    toJSON() { return [...resolutions]; },
-    load(entries) { resolutions.clear(); for (const [k, v] of entries || []) resolutions.set(k, v); },
-    clear() { resolutions.clear(); },
+    /** Für Entwürfe: Entscheidungen (gleicher Name, ähnliche Fragen) und „keine Dublette“. */
+    toJSON() { return { res: [...resolutions], sim: [...simRes], dismissed: [...dismissed] }; },
+    load(data) {
+      resolutions.clear(); simRes.clear(); dismissed.clear();
+      const d = Array.isArray(data) ? { res: data } : data || {}; // früher nur die Liste der Entscheidungen
+      for (const [k, v] of d.res || []) resolutions.set(k, v);
+      for (const [k, v] of d.sim || []) simRes.set(k, v);
+      for (const k of d.dismissed || []) dismissed.add(k);
+    },
+    clear() { resolutions.clear(); simRes.clear(); dismissed.clear(); similar.clear(); store = undefined; },
   };
 }
