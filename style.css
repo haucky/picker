@@ -308,6 +308,9 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
   background: var(--surface); color: var(--text); font: inherit; resize: vertical; outline: none;
 }
 .answer-box .btn-row { justify-content: flex-end; }
+.answer-count { margin-right: auto; align-self: center; color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.answer-count.full { color: var(--green); font-weight: 600; }
+.card-expected { text-align: center; color: var(--muted); font-size: .85rem; margin-top: -6px; }
 .answer-box .btn-row .btn { flex: 0 0 auto; }
 .ratings { display: flex; gap: 8px; position: sticky; bottom: calc(var(--tabs-h) + 8px); padding-top: 8px; background: var(--bg); }
 .rate {

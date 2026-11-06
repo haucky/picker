@@ -204,6 +204,15 @@ export function setFixedInterval(text, iv) {
   return addTagsToText(text, [tag.slice(1)]);
 }
 
+/** Wie viele Punkte die Antwort haben soll (#list/4 hinter der Frage) oder null. */
+export function expectedItems(tags) {
+  for (const t of tags) {
+    const m = /^list\/(\d{1,2})$/i.exec(t);
+    if (m && +m[1] > 0) return +m[1];
+  }
+  return null;
+}
+
 /** Letztes Review-Datum (Tag) aus #reviewed/JJJJ/MM/TT oder null. */
 export function reviewedDay(tags) {
   for (const t of tags) {

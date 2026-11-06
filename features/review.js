@@ -6,7 +6,7 @@ import { renderMarkdown } from './markdown.js';
 import {
   CONFIG_PATH, RESPONSES, parseDecks, buildCards, srState, nextState, writeState, dueDateCounts,
   formatInterval, setReviewed, seedDay, splitAnswers, appendAnswer, cardBody, today, isConfig,
-  setReviewState, fixedInterval, reviewedDay, setFixedInterval, markDone, addInterval,
+  setReviewState, expectedItems, fixedInterval, reviewedDay, setFixedInterval, markDone, addInterval,
   formatFixed, formatIntervalShort, sameInterval, intervalTag, dayToGerman,
 } from './srs.js';
 import { studyOrder } from './studydoc.js';
@@ -295,10 +295,12 @@ function renderCard() {
     badge(card),
     h('button', { type: 'button', class: 'card-front', onclick: () => ui.openNote(note.path) }, note.title + '?'),
   ];
+  const expected = expectedItems(note.tags); // #list/4: so viele Punkte soll die Antwort haben
+  if (expected) parts.push(h('div', { class: 'card-expected' }, `${expected} Punkte erwartet`));
   if (card.kind === 'fixed' && session.editingInterval) parts.splice(2, 0, intervalPicker(card));
   if (note.path.includes('/')) parts.push(h('div', { class: 'card-path' }, note.path.slice(0, note.path.lastIndexOf('/'))));
 
-  if (session.answering) parts.push(answerBox(note));
+  if (session.answering) parts.push(answerBox(note, expected));
   else parts.push(h('button', { type: 'button', class: 'link accent', onclick: () => { session.answering = true; renderCard(); } }, '✍️ Antwort notieren'));
 
   if (!session.revealed) {
@@ -332,8 +334,18 @@ function relatedBox(note) {
   return box;
 }
 
-function answerBox(note) {
-  const ta = h('textarea', { class: 'answer-input', rows: 4, placeholder: 'Was weißt du noch?', 'aria-label': 'Antwort' });
+/** Antwortfeld; mit `expected` (#list/N) zählt ein kleiner Zähler die Stichpunkte (eine Zeile = ein Punkt). */
+function answerBox(note, expected) {
+  const ta = h('textarea', { class: 'answer-input', rows: 4, placeholder: expected ? `${expected} Punkte – einer pro Zeile` : 'Was weißt du noch?', 'aria-label': 'Antwort' });
+  const counter = expected ? h('span', { class: 'answer-count' }) : null;
+  const count = () => {
+    if (!counter) return;
+    const n = ta.value.split('\n').filter((l) => l.replace(/^\s*(?:[-*+]|\d+[.)])?\s*/, '').trim()).length;
+    counter.textContent = `${n} / ${expected}`;
+    counter.classList.toggle('full', n >= expected);
+  };
+  ta.addEventListener('input', count);
+  count();
   const save = async () => {
     const text = ta.value.trim();
     if (!text) { session.answering = false; renderCard(); return; }
@@ -348,7 +360,7 @@ function answerBox(note) {
   };
   setTimeout(() => ta.focus(), 0);
   return h('div', { class: 'answer-box' }, ta,
-    h('div', { class: 'btn-row' },
+    h('div', { class: 'btn-row' }, counter,
       h('button', { type: 'button', class: 'btn small', onclick: () => { session.answering = false; renderCard(); } }, 'Abbrechen'),
       h('button', { type: 'button', class: 'btn small', onclick: save }, 'Speichern')));
 }

@@ -184,6 +184,7 @@ Notizen ohne diese Felder sind „neu“; die Felder werden beim ersten Bewerten
 
 - Titel antippen öffnet die Notiz, **Antwort zeigen** deckt die Rückseite auf. Eigene Antworten (`::TT.MM.JJJJ::`-Blöcke) stehen eingeklappt darunter.
 - **✍️ Antwort notieren** hängt `::TT.MM.JJJJ::` + `- Antwort` ans Dateiende (wie „New Answer“ im Obsidian-Snippet).
+- **Listen-Fragen:** `#list/4` hinter der Frage (bzw. in der Tag-Zeile) heißt „4 Punkte erwartet“ – das steht unter der Frage, und beim Antwort-Notieren zählt ein kleiner Zähler „3 / 4“ mit (eine nicht leere Zeile = ein Punkt). In den Tag-Vorschlägen erscheinen `#list/…` erst, wenn man `#list` tippt.
 - **Schwer / Gut / Leicht** zeigen den nächsten Abstand und schreiben sofort in die Datei. **↶ Rückgängig** stellt die letzte Bewertung wieder her (nur, wenn die Datei seitdem nicht geändert wurde). **↷ Überspringen** lässt die Karte unverändert. **⊘ Aussortieren** setzt den Review-Status auf *nicht abfragen* (z. B. für Orga-Fragen; rückgängig machbar, im Study-Editor wieder änderbar).
 - Fällige Karten kommen zuerst (am längsten überfällige oben), danach neue: älteste VL (`#date/…`) zuerst, innerhalb einer VL in der Reihenfolge aus dem Study-Editor (`study-order`).
 - Tastatur am Laptop: Leertaste/Enter = Antwort zeigen, 1/2/3 = Schwer/Gut/Leicht, Enter = Erledigt (bisheriges Intervall), 1–7 = Erledigt mit Intervall aus der Auswahl, u = Rückgängig.
