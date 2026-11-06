@@ -295,7 +295,7 @@ function renderCard() {
     badge(card),
     h('button', { type: 'button', class: 'card-front', onclick: () => ui.openNote(note.path) }, note.title + '?'),
   ];
-  const expected = expectedItems(note.tags); // #list/4: so viele Punkte soll die Antwort haben
+  const expected = expectedItems(note.tags); // #n/4: so viele Punkte soll die Antwort haben
   if (expected) parts.push(h('div', { class: 'card-expected' }, `${expected} Punkte erwartet`));
   if (card.kind === 'fixed' && session.editingInterval) parts.splice(2, 0, intervalPicker(card));
   if (note.path.includes('/')) parts.push(h('div', { class: 'card-path' }, note.path.slice(0, note.path.lastIndexOf('/'))));
@@ -334,7 +334,7 @@ function relatedBox(note) {
   return box;
 }
 
-/** Antwortfeld; mit `expected` (#list/N) zählt ein kleiner Zähler die Stichpunkte (eine Zeile = ein Punkt). */
+/** Antwortfeld; mit `expected` (#n/N) zählt ein kleiner Zähler die Stichpunkte (eine Zeile = ein Punkt). */
 function answerBox(note, expected) {
   const ta = h('textarea', { class: 'answer-input', rows: 4, placeholder: expected ? `${expected} Punkte – einer pro Zeile` : 'Was weißt du noch?', 'aria-label': 'Antwort' });
   const counter = expected ? h('span', { class: 'answer-count' }) : null;

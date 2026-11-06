@@ -3,7 +3,7 @@
 // Tags, die in keiner Notiz mehr stehen, verschwinden von selbst.
 
 // Massenhaft vorhandene Tags nur zeigen, wenn ausdrücklich danach getippt wird (z. B. „#date/2026“).
-const HIDDEN = ['date/', 'reviewed/', 'list/'];
+const HIDDEN = ['date/', 'reviewed/', 'n/'];
 
 export function createTagIndex({ notes }) {
   let tags = null; // [{ tag, lower, count }]
