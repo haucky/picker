@@ -231,19 +231,56 @@ export function markDone(text, iv, day) {
 
 /**
  * Stapel aus Review.md: jede Überschrift ist ein Stapel, darunter `tag: #a` (genau ein Tag; `tags:` geht auch,
- * dann zählt der erste). Alte `ohne:`-Zeilen werden ignoriert (ersetzt durch den Review-Status „skip“).
- * Gibt [{ name, tag (Originalschreibweise) }] zurück (nur Stapel mit Tag).
+ * dann zählt der erste) und optional Titel einzelner VLs: `vl: JJJJ-MM-TT Titel`. Alte `ohne:`-Zeilen werden
+ * ignoriert (ersetzt durch den Review-Status „skip“).
+ * Gibt [{ name, tag (Originalschreibweise), titles: Map Tag → VL-Titel }] zurück (nur Stapel mit Tag).
  */
 export function parseDecks(text) {
   const decks = [];
   let cur = null;
   for (const line of splitFrontmatter(text).body.split(/\r?\n/)) {
     const hm = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(line);
-    if (hm) { cur = { name: hm[1], tag: null }; decks.push(cur); continue; }
+    if (hm) { cur = { name: hm[1], tag: null, titles: new Map() }; decks.push(cur); continue; }
+    if (!cur) continue;
     const km = /^\s*(?:[-*+]\s+)?tags?\s*:\s*(.*)$/i.exec(line);
-    if (km && cur) cur.tag ??= parseTags(' ' + km[1])[0] || null;
+    if (km) { cur.tag ??= parseTags(' ' + km[1])[0] || null; continue; }
+    const vm = VL_LINE_RE.exec(line);
+    const day = vm && isoToDay(vm[1]);
+    if (day != null && vm[2].trim()) cur.titles.set(day, vm[2].trim());
   }
   return decks.filter((d) => d.tag);
+}
+
+const VL_LINE_RE = /^\s*(?:[-*+]\s+)?vl\s*:\s*(\d{4}-\d{2}-\d{2})\s+(.*)$/i;
+
+/**
+ * Setzt den Titel der VL `day` im Stapel `deckName` in Review.md: ersetzt die vorhandene `- vl:`-Zeile, entfernt sie
+ * (leerer Titel) oder fügt sie am Ende des Stapel-Abschnitts ein (nach den tag:/vl:-Zeilen, sortiert nach Datum).
+ */
+export function setVLTitle(text, deckName, day, title) {
+  const nl = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((l) => { const m = /^#{1,6}\s+(.+?)\s*#*\s*$/.exec(l); return m && m[1] === deckName; });
+  if (start < 0) throw new Error(`Stapel „${deckName}“ nicht in ${CONFIG_PATH}`);
+  let end = lines.findIndex((l, i) => i > start && /^#{1,6}\s/.test(l));
+  if (end < 0) end = lines.length;
+  const iso = dayToIso(day);
+  const t = String(title || '').replace(/\s+/g, ' ').trim();
+  const line = `- vl: ${iso} ${t}`;
+  const at = lines.findIndex((l, i) => i > start && i < end && VL_LINE_RE.exec(l)?.[1] === iso);
+  if (at >= 0) {
+    if (t) lines[at] = line; else lines.splice(at, 1);
+    return lines.join(nl);
+  }
+  if (!t) return text;
+  // nach der letzten tag:/vl:-Zeile mit früherem Datum einfügen
+  let pos = start + 1;
+  for (let i = start + 1; i < end; i++) {
+    const vm = VL_LINE_RE.exec(lines[i]);
+    if (/^\s*(?:[-*+]\s+)?tags?\s*:/i.test(lines[i]) || (vm && vm[1] < iso)) pos = i + 1;
+  }
+  lines.splice(pos, 0, line);
+  return lines.join(nl);
 }
 
 const hasTag = (tagsLower, wanted) => tagsLower.some((t) => wanted.some((w) => t === w || t.startsWith(w + '/')));

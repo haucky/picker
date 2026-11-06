@@ -4,7 +4,9 @@ import { h, stableView } from './dom.js';
 import { createQuestionEditor, createIssues, questionLines, popMenu, closeMenu } from './qeditor.js';
 import { createConflicts } from './conflicts.js';
 import { printVL, exportName, withoutTodos } from './export.js';
-import { CONFIG_PATH, parseDecks, inDeck, isConfig, today, dayToGerman, reviewState, nextReviewState, countStates } from './srs.js';
+import {
+  CONFIG_PATH, parseDecks, inDeck, isConfig, today, dayToGerman, reviewState, nextReviewState, countStates, setVLTitle,
+} from './srs.js';
 import {
   todos, todoItems, todoText, groupByDay, dayOfNote, PRIO_LABEL, buildDoc, parseDoc, planSave, roundtripIssues, baseTags, parseQuestion,
   applyMerge,
@@ -23,6 +25,18 @@ let busy = false;
 function decks() {
   const cfg = core.list().find((n) => isConfig(n.path));
   return cfg ? parseDecks(cfg.text) : [];
+}
+
+/** Titel einer VL in Review.md setzen (leer = entfernen) – sofort gespeichert, unabhängig vom VL-Editor. */
+async function saveVLTitle(deck, day, title) {
+  const cfg = core.list().find((n) => isConfig(n.path));
+  if (!cfg || day == null) return;
+  try {
+    await core.update(cfg.path, (text) => setVLTitle(text, deck.name, day, title));
+    if (title.trim()) deck.titles.set(day, title.trim()); else deck.titles.delete(day);
+  } catch (err) {
+    ui.toast('Titel nicht gespeichert: ' + err.message, 4000);
+  }
 }
 
 function dayLabel(day) {
@@ -122,9 +136,21 @@ function renderDeck(deck, notes) {
     h('header', { class: 'bar' },
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zurück', onclick: leave }, '←'),
       h('h1', { class: 'ellipsis' }, deck.name)),
-    h('button', { type: 'button', class: 'btn', onclick: (e) => openVL(deck, day, null, e.currentTarget) },
-      hasToday ? `Heutige VL öffnen (${dayToGerman(day)})` : `+ Neue VL heute (${dayToGerman(day)})`),
   ];
+  if (hasToday) {
+    children.push(h('button', { type: 'button', class: 'btn', onclick: (e) => openVL(deck, day, null, e.currentTarget) },
+      `Heutige VL öffnen (${dayToGerman(day)})`));
+  } else {
+    // optionaler Titel direkt daneben – leer lassen und einfach anlegen geht wie bisher
+    const titleIn = h('input', { type: 'text', class: 'filter vl-title-input', placeholder: 'Titel (optional)', 'aria-label': 'Titel der neuen VL (optional)' });
+    const create = async (btn) => {
+      if (titleIn.value.trim()) await saveVLTitle(deck, day, titleIn.value);
+      openVL(deck, day, null, btn);
+    };
+    const btn = h('button', { type: 'button', class: 'btn', onclick: (e) => create(e.currentTarget) }, `+ Neue VL heute (${dayToGerman(day)})`);
+    titleIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); create(btn); } });
+    children.push(h('div', { class: 'vl-new' }, btn, titleIn));
+  }
 
   const open = [];
   for (const g of groups) {
@@ -144,7 +170,8 @@ function renderDeck(deck, notes) {
   children.push(h('ul', { class: 'decks' }, ...groups.map((g) => h('li', {},
     h('button', { type: 'button', class: 'deck' + (allSet(g.notes) ? ' all-set' : ''), onclick: (e) => openVL(deck, g.day, null, e.currentTarget) },
       h('div', { class: 'deck-main' },
-        h('div', { class: 'deck-title' }, dayLabel(g.day)),
+        h('div', { class: 'deck-title' }, dayLabel(g.day),
+          deck.titles.get(g.day) ? h('span', { class: 'vl-title' }, ' · ' + deck.titles.get(g.day)) : null),
         h('div', { class: 'deck-sub' }, plural(g.notes.length, 'Frage', 'Fragen'))),
       h('div', { class: 'deck-counts' }, todoBadge(countTodos(g.notes)), stateBar(deck, g.notes)))))));
   listView.show(children);
@@ -234,12 +261,53 @@ async function openVL(deck, day, focus, btn) {
   if (focus) requestAnimationFrame(() => jumpTo(focus));
 }
 
+/**
+ * Titel der VL in der Kopfzeile: ohne Titel dezent „+ Titel“ hinter dem Datum, mit Titel eine eigene kleine Zeile.
+ * Antippen zum Ändern: Enter (oder woanders hin tippen) speichert sofort in Review.md, Escape bricht ab.
+ * Gibt [Teil für die Unterzeile, eigene Titelzeile] zurück.
+ */
+function titleControl() {
+  const inline = h('span', { class: 'vl-title-ctl' });
+  const line = h('div', { class: 'bar-sub vl-line', hidden: true });
+  if (ed.day == null) return [null, null]; // „Ohne Datum“ hat keinen Titel
+  const show = () => {
+    const t = ed.deck.titles.get(ed.day);
+    const btn = h('button', { type: 'button', class: 'vl-title-btn' + (t ? '' : ' empty'), title: 'Titel der VL ändern', onclick: edit }, t || '+ Titel');
+    inline.replaceChildren(...(t ? [] : [' · ', btn]));
+    line.replaceChildren(...(t ? [btn] : []));
+    line.hidden = !t;
+  };
+  const edit = () => {
+    const input = h('input', { type: 'text', class: 'vl-title-edit', value: ed.deck.titles.get(ed.day) || '', placeholder: 'Titel der VL', 'aria-label': 'Titel der VL' });
+    let done = false;
+    const finish = async (keep) => {
+      if (done) return;
+      done = true;
+      if (keep && input.value.trim() !== (ed.deck.titles.get(ed.day) || '')) await saveVLTitle(ed.deck, ed.day, input.value);
+      if (ed) show();
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+    inline.replaceChildren();
+    line.replaceChildren(input);
+    line.hidden = false;
+    setTimeout(() => input.focus());
+  };
+  show();
+  return [inline, line];
+}
+
 function renderEditor(text) {
   // Titel zweizeilig (Stapel, darunter Zähler und Datum – Wichtigstes vorn), damit er neben PDF/Speichern auch auf dem Handy Platz hat
   ed.count = h('span', { class: 'count' });
+  const [titleInline, titleLine] = titleControl();
   const title = h('div', { class: 'bar-title' },
     h('h1', { class: 'ellipsis' }, ed.deck.name),
-    h('div', { class: 'bar-sub ellipsis' }, ed.count, ' · ', shortDay(ed.day)));
+    h('div', { class: 'bar-sub ellipsis' }, ed.count, ' · ', shortDay(ed.day), titleInline),
+    titleLine);
   ed.save = h('button', { type: 'button', class: 'btn small', onclick: save }, 'Speichern');
   const pdf = h('button', { type: 'button', class: 'btn small', onclick: exportPDF, title: 'Als PDF exportieren (Drucken → Als PDF speichern)' }, 'PDF');
   ed.issuesBox = createIssues(jumpToLine);
@@ -476,7 +544,7 @@ async function exportPDF() {
   if (!exportName()) ui.toast('Tipp: Deinen Namen für den Export unter Settings eintragen.', 4000);
   try {
     await printVL({
-      deck: ed.deck, day: ed.day, text: ed.cm.value,
+      deck: ed.deck, day: ed.day, title: ed.deck.titles.get(ed.day), text: ed.cm.value,
       resolveImage: (link) => ui.resolveImage(link, ed.folder ? ed.folder + '/_.md' : '_.md'),
     });
   } catch (err) {
@@ -631,7 +699,8 @@ export default {
     core = ui.core;
     listEl = h('div', { class: 'study-list' });
     editEl = h('div', { class: 'study-edit', hidden: true });
-    listView = stableView(listEl, { hold: () => busy }); // nicht neu zeichnen, während eine VL geöffnet wird
+    // nicht neu zeichnen, während eine VL geöffnet wird oder im Titel-Feld getippt wird
+    listView = stableView(listEl, { hold: () => busy || (document.activeElement?.tagName === 'INPUT' && listEl.contains(document.activeElement)) });
     root.append(listEl, editEl);
 
     // Zurück-Geste: Editor → Stapel → Übersicht

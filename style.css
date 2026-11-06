@@ -528,6 +528,7 @@ img.img-big { max-width: 100%; }
 .print-title { text-align: center; margin: 0 0 2.2em; }
 .print-title h1 { font-size: 20pt; font-weight: normal; line-height: 1.2; margin: 0 0 .7em; }
 .print-author, .print-date { font-size: 12pt; margin: .3em 0; }
+.print-vltitle { font-size: 14pt; font-style: italic; margin: .2em 0 .4em; }
 .print-q { counter-increment: q; }
 .print-q h2 { font-size: 13pt; font-weight: bold; text-align: left; margin: 1.6em 0 .4em; break-after: avoid; page-break-after: avoid; }
 .print-q h2::before { content: counter(q); display: inline-block; min-width: 1.8em; }
@@ -782,6 +783,20 @@ body.peek-open .panel { padding-bottom: calc(58dvh + 24px); } /* Editor lässt s
 .bar-title h1 { flex: none; font-size: 1.05rem; line-height: 1.25; }
 .bar-sub { color: var(--muted); font-size: .8rem; line-height: 1.25; }
 .bar-sub .count { padding: 0; font-size: inherit; }
+.vl-title-ctl { white-space: pre; }
+.bar-sub.vl-line { display: flex; min-width: 0; }
+.bar-sub.vl-line .vl-title-btn { color: var(--text-2); font-style: italic; }
+.bar-sub.vl-line .vl-title-edit { width: 100%; max-width: none; }
+.vl-title-btn {
+  border: 0; background: transparent; padding: 0; font: inherit; color: var(--text-2); cursor: pointer;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left;
+}
+.vl-title-btn.empty { color: var(--muted); opacity: .7; }
+.vl-title-edit { font: inherit; width: 12em; max-width: 50vw; padding: 0 4px; border: 1px solid var(--accent); border-radius: 4px; background: var(--bg); color: var(--text); }
+.vl-new { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+.vl-new .btn { flex: 1 1 auto; }
+.vl-new .vl-title-input { flex: 1 1 10em; min-width: 0; width: auto; }
+.deck-title .vl-title { font-weight: 400; color: var(--text-2); }
 @media (max-width: 480px) {
   .bar:has(.bar-title) { gap: 6px; }
   .bar:has(.bar-title) .btn.small { padding: 0 10px; }

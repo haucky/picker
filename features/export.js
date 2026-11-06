@@ -48,7 +48,7 @@ const longDate = (day) => new Date(day * 864e5).toLocaleDateString('de-DE', { da
  * Druckt eine VL. `text` = Dokument aus dem VL-Editor (auch ungespeichert), `day` = Kalendertag oder null,
  * `resolveImage(link)` → Promise<URL|null>. Wartet, bis alle Bilder geladen sind, damit sie im PDF landen.
  */
-export async function printVL({ deck, day, text, resolveImage }) {
+export async function printVL({ deck, day, title: vlTitle, text, resolveImage }) {
   const { items } = parseDoc(text);
   const pending = [];
   const ctx = { resolveImage: (link) => { const p = resolveImage(link); pending.push(p.catch(() => null)); return p; } };
@@ -56,6 +56,7 @@ export async function printVL({ deck, day, text, resolveImage }) {
   const doc = h('article', { class: 'print-doc', lang: 'de' },
     h('header', { class: 'print-title' },
       h('h1', {}, deck.name),
+      vlTitle ? h('p', { class: 'print-vltitle' }, vlTitle) : null,
       name ? h('p', { class: 'print-author' }, name) : null,
       day != null ? h('p', { class: 'print-date' }, `Vorlesung vom ${longDate(day)}`) : null),
     ...items.map((it) => {
@@ -76,7 +77,7 @@ export async function printVL({ deck, day, text, resolveImage }) {
   await Promise.all([...doc.querySelectorAll('img')].filter((i) => i.src).map((i) => i.decode().catch(() => {})));
 
   const title = document.title;
-  document.title = [deck.name, day != null ? 'VL ' + new Date(day * 864e5).toISOString().slice(0, 10) : null, name]
+  document.title = [deck.name, day != null ? 'VL ' + new Date(day * 864e5).toISOString().slice(0, 10) : null, vlTitle, name]
     .filter(Boolean).join(' – '); // Vorschlag für den Dateinamen des PDFs
   document.body.classList.add('printing');
   const cleanup = () => {

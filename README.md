@@ -87,6 +87,7 @@ Vorlesungen nacharbeiten. Die Stapel sind dieselben wie im Review (aus `Review.m
 
 - **Übersicht:** Stapel mit Zahl der offenen Todos, VLs und Fragen, dazu ein schmaler Balken mit dem Review-Status der Fragen (gelb offen, grün bereit, grau nicht abfragen) und „N offen“ – so sieht man, was noch nachzuarbeiten ist. Dasselbe pro VL in der Liste des Stapels. Gibt es keine offenen Fragen mehr, wird der Eintrag dezent hervorgehoben (leicht grüner Hintergrund, ein kleiner ✦ hüpft herum).
 - **Stapel antippen:** „+ Neue VL heute“ (bzw. „Heutige VL öffnen“), darunter alle offenen Todos des Stapels (antippen springt im Editor zur Stelle) und die VLs, neueste zuerst.
+- **VL-Titel (optional):** z. B. „Chapter 1 + 2“ oder „Besprechung Hausarbeit“. Neben „+ Neue VL heute“ steht ein Feld „Titel (optional)“ – leer lassen und einfach anlegen geht wie bisher. Im VL-Editor steht ohne Titel dezent „+ Titel“ hinter dem Datum, mit Titel eine eigene Zeile darunter; antippen ändert ihn (Enter speichert sofort, leer = entfernen). In der VL-Liste steht er hinter dem Datum, im PDF unter dem Stapel-Namen. Gespeichert wird er in `Review.md` unter dem Stapel als `- vl: JJJJ-MM-TT Titel` (eine Zeile pro VL, nach Datum sortiert; dort auch von Hand änderbar). Ziehen Fragen per Datumszeile auf ein anderes Datum, bleibt der Titel beim alten Datum.
 - **VL antippen:** Alle Fragen der VL als ein Text:
 
   ```
@@ -152,6 +153,7 @@ Notizen wie Karteikarten wiederholen: **Vorderseite = Dateiname**, **Rückseite 
 ```markdown
 ## Datenbanken WS26
 - tag: #uni/dbs
+- vl: 2026-10-14 Chapter 1 + 2
 
 ## Analysis I
 - tag: #uni/ana1
