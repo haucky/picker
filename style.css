@@ -393,6 +393,18 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .md-editor .cm-bullet, .md-editor .cm-listmark { color: var(--muted); }
 .md-editor .cm-bullet { display: inline-block; min-width: .7em; }
 .md-editor .cm-task { width: 1em; height: 1em; margin: 0 .3em 0 0; vertical-align: -0.12em; accent-color: var(--accent); }
+.cm-linkbox {
+  position: fixed; z-index: 15; width: min(320px, calc(100vw - 16px)); padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 24px rgba(0, 0, 0, .3);
+}
+.cm-linkbox-input {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 6px; background: var(--bg);
+  color: var(--text); font: inherit; outline: none;
+}
+.cm-linkbox-list { display: flex; flex-direction: column; }
+.cm-linkbox-item { border: 0; background: transparent; color: var(--text); text-align: left; padding: 7px 10px; border-radius: 6px; overflow-wrap: anywhere; }
+.cm-linkbox-item.on, .cm-linkbox-item:hover { background: var(--bg); color: var(--accent); }
+.cm-linkbox-hint { color: var(--muted); font-size: .75rem; padding: 2px 10px 0; }
 .md-editor .cm-link, .md-editor .cm-wikilink { color: var(--violet); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .md-editor .cm-wikilink-src { color: var(--violet); }
 .md-editor .cm-tag { color: var(--cyan); }

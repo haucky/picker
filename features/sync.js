@@ -354,7 +354,7 @@ export default {
       h('p', { class: 'hint left' },
         'Läuft auf dem eigenen Computer (Einrichtung: README, „KI lokal“). Erst einschalten, wenn Ollama läuft – vorher ' +
         'fragt die App den lokalen Server gar nicht an. Schnell: Korrektur (Doppelklick auf ein Wort), Fragen vergleichen. ' +
-        'Gut: Prompts (Text markieren, Strg/Cmd+K). Leeres Feld = Standard.'),
+        'Gut: Prompts (Text markieren, Strg/Cmd+J). Leeres Feld = Standard.'),
       localModels,
       h('h3', { class: 'settings-sub' }, 'Tinfoil (Cloud, verschlüsselt)'),
       ...tinfoilAI(),

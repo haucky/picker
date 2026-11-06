@@ -91,7 +91,7 @@ export function openPeek(ui, note, opts = {}) {
 
   const body = normBody(splitNote(note.text).content);
   const tagsText = tagLineTags(note.text).map((t) => '#' + t).join(' ');
-  const shared = { saveImage: ui.saveImage, spell: ui.spell, ai: ui.ai, tags: ui.tags };
+  const shared = { saveImage: ui.saveImage, spell: ui.spell, ai: ui.ai, tags: ui.tags, notes: () => ui.core.list() };
   const openLink = (t) => (opts.openLink ? opts.openLink(t) : ui.openLink(t));
   const tagsEd = createEditor({ parent: tagsHost, doc: tagsText, placeholder: '#tags', tags: ui.tags, openLink });
   const ed = createEditor({ parent: host, doc: body, openLink, resolveImage: (link) => ui.resolveImage(link, note.path), ...shared });

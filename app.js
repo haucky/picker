@@ -247,6 +247,7 @@ async function init() {
     ai,
     prompt: desktop ? prompts : null,
     tags,
+    notes: () => core.list(), // Strg/Cmd+K: Vorschläge für Notiz-Links
   });
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 's' && current) { e.preventDefault(); save(); }

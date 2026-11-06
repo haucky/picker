@@ -59,6 +59,22 @@ class LinkWidget extends WidgetType {
   ignoreEvent() { return true; }
 }
 
+/** Gerenderter [Text](URL): nur der Text, wie ein Link; antippen öffnet (bearbeiten: Cursor per Pfeiltasten hinein). */
+class WebLinkWidget extends WidgetType {
+  constructor(text, href, open) { super(); this.text = text; this.href = href; this.open = open; }
+  eq(o) { return o.text === this.text && o.href === this.href; }
+  toDOM() {
+    const a = document.createElement('span');
+    a.className = 'cm-link';
+    a.textContent = this.text;
+    a.title = this.href;
+    a.addEventListener('mousedown', (e) => e.preventDefault());
+    a.addEventListener('click', (e) => { e.preventDefault(); openHref(this.href, this.open); });
+    return a;
+  }
+  ignoreEvent() { return true; }
+}
+
 class ImageWidget extends WidgetType {
   constructor(link, resolve, size) { super(); this.link = link; this.resolve = resolve; this.size = size; }
   eq(o) { return o.link === this.link && JSON.stringify(o.size) === JSON.stringify(this.size); }
@@ -86,6 +102,15 @@ class HrWidget extends WidgetType {
 }
 
 /* ---------- Live-Vorschau ---------- */
+
+/** Ziel eines Markdown-Links öffnen: Web-Adressen (mit Schema oder www.) im neuen Tab, sonst als Notiz (openLink). */
+function openHref(href, openLink) {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || /^www\./i.test(href)) {
+    window.open(/^www\./i.test(href) ? 'https://' + href : href, '_blank', 'noopener');
+  } else if (href) {
+    try { openLink?.(decodeURI(href)); } catch { openLink?.(href); }
+  }
+}
 
 function livePreview({ openLink, resolveImage }) {
   return ViewPlugin.fromClass(class {
@@ -150,12 +175,20 @@ function livePreview({ openLink, resolveImage }) {
               if (touches(node.from, node.to)) return false;
               const c = node.node.cursor();
               let textEnd = null;
+              let href = '';
               if (c.firstChild()) {
                 do {
                   if (c.name === 'LinkMark') { if (textEnd == null && state.doc.sliceString(c.from, c.to) === ']') textEnd = c.from; }
+                  if (c.name === 'URL') href = state.doc.sliceString(c.from, c.to).replace(/^<|>$/g, '');
                 } while (c.nextSibling());
               }
               if (textEnd == null) return false;
+              if (href) {
+                // nur der Linktext, hervorgehoben; antippen öffnet – die URL erscheint erst mit dem Cursor im Link
+                const shown = state.doc.sliceString(node.from + 1, textEnd) || href;
+                out.push(Decoration.replace({ widget: new WebLinkWidget(shown, href, openLink) }).range(node.from, node.to));
+                return false;
+              }
               hide(node.from, node.from + 1);
               out.push(Decoration.mark({ class: 'cm-link' }).range(node.from + 1, textEnd));
               hide(textEnd, node.to);
@@ -560,7 +593,7 @@ function insertBelow(view, text) {
 
 /**
  * Ist Text markiert (und steht kurz still), erscheint darunter ein Eingabefeld für einen Prompt (ohne den Fokus zu
- * nehmen; Strg/Cmd+K springt hinein). Abkürzungen aus `prompt.list()` werden darunter angeboten (Tab ergänzt).
+ * nehmen; Strg/Cmd+J springt hinein). Abkürzungen aus `prompt.list()` werden darunter angeboten (Tab ergänzt).
  * Enter schickt Prompt + markierten Text an `prompt.run()` (siehe prompts.js), das die Antwort anzeigt.
  */
 function selectionPrompt(prompt) {
@@ -675,9 +708,135 @@ function selectionPrompt(prompt) {
     askField,
     plugin,
     Prec.high(keymap.of([
-      { key: 'Mod-k', run: (view) => open(view, true) },
+      { key: 'Mod-j', run: (view) => open(view, true) },
       { key: 'Escape', run: close },
     ])),
+  ];
+}
+
+/* ---------- Links einfügen (Strg/Cmd+K) ---------- */
+
+const URL_RE = /^(?:[a-z][a-z0-9+.-]*:\/\/|mailto:|www\.)\S+$/i;
+const toHref = (s) => (/^www\./i.test(s) ? 'https://' + s : s);
+let linkBoxEl = null;
+
+function closeLinkBox(view) {
+  if (!linkBoxEl) return false;
+  document.removeEventListener('pointerdown', linkBoxEl._outside, true);
+  linkBoxEl.remove();
+  linkBoxEl = null;
+  view?.focus();
+  return true;
+}
+
+/**
+ * Feld unter dem Cursor: eine URL ergibt [Text](URL), ein Notizname (Vorschläge aus `notes()`) [[Notiz]] bzw.
+ * [[Notiz|Text]]. Markierter Text wird zum Linktext; steht der Cursor in einem [Text](URL), wird dessen URL bearbeitet.
+ */
+function openLinkBox(view, notes) {
+  closeLinkBox();
+  const { state } = view;
+  const sel = state.selection.main;
+  let from = sel.from;
+  let to = sel.to;
+  let text = state.sliceDoc(from, to);
+  let value = '';
+  if (sel.empty) {
+    for (let n = syntaxTree(state).resolveInner(sel.head, -1); n; n = n.parent) {
+      if (n.name !== 'Link') continue;
+      const m = /^\[([^\]]*)\]\(\s*<?([^)\s>]*)/.exec(state.sliceDoc(n.from, n.to));
+      if (m) { from = n.from; to = n.to; text = m[1]; value = m[2]; }
+      break;
+    }
+  }
+  if (text.includes('\n')) text = '';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'cm-linkbox-input';
+  input.placeholder = 'URL oder Notiz …';
+  input.value = value;
+  input.setAttribute('aria-label', 'Link: URL oder Notiz');
+  const list = document.createElement('div');
+  list.className = 'cm-linkbox-list';
+  const hint = document.createElement('div');
+  hint.className = 'cm-linkbox-hint';
+  const box = document.createElement('div');
+  box.className = 'cm-linkbox';
+  box.append(input, list, hint);
+  let hits = [];
+  let active = -1;
+
+  const apply = (note) => {
+    const v = input.value.trim();
+    let insert;
+    if (note) insert = text && text !== note.title ? `[[${note.title}|${text}]]` : `[[${note.title}]]`;
+    else if (!v) return closeLinkBox(view);
+    else if (URL_RE.test(v)) insert = `[${text || v}](${toHref(v)})`;
+    else insert = text && text !== v ? `[[${v}|${text}]]` : `[[${v}]]`;
+    closeLinkBox(view);
+    view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length }, userEvent: 'input' });
+  };
+  const render = () => {
+    list.replaceChildren(...hits.map((n, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cm-linkbox-item' + (i === active ? ' on' : '');
+      b.textContent = n.title;
+      b.addEventListener('mousedown', (e) => e.preventDefault());
+      b.addEventListener('click', () => apply(n));
+      return b;
+    }));
+    const v = input.value.trim();
+    hint.textContent = !v ? (text ? `Linktext: „${text}“` : 'URL einfügen oder Notiz suchen')
+      : URL_RE.test(v) ? 'Enter: Web-Link' : hits.length ? 'Enter: Notiz-Link (↑/↓ wählen)' : `Enter: Link auf „${v}“`;
+  };
+  const suggest = () => {
+    const q = input.value.trim().toLowerCase();
+    hits = !q || URL_RE.test(q) || !notes ? [] : notes()
+      .filter((n) => n.title.toLowerCase().includes(q))
+      .sort((a, b) => b.title.toLowerCase().startsWith(q) - a.title.toLowerCase().startsWith(q) || a.title.length - b.title.length)
+      .slice(0, 6);
+    active = hits.length ? 0 : -1;
+    render();
+  };
+  input.addEventListener('input', suggest);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeLinkBox(view); }
+    else if (e.key === 'ArrowDown' && hits.length) { e.preventDefault(); active = (active + 1) % hits.length; render(); }
+    else if (e.key === 'ArrowUp' && hits.length) { e.preventDefault(); active = (active - 1 + hits.length) % hits.length; render(); }
+    else if (e.key === 'Enter' || (e.key === 'Tab' && active >= 0)) {
+      e.preventDefault();
+      apply(active >= 0 && !URL_RE.test(input.value.trim()) ? hits[active] : null);
+    }
+  });
+  const c = view.coordsAtPos(from) || view.dom.getBoundingClientRect();
+  document.body.append(box);
+  box.style.left = Math.max(8, Math.min(c.left, window.innerWidth - box.offsetWidth - 8)) + 'px';
+  box.style.top = Math.min(c.bottom + 6, window.innerHeight - box.offsetHeight - 8) + 'px';
+  box._outside = (e) => { if (!box.contains(e.target)) closeLinkBox(); };
+  document.addEventListener('pointerdown', box._outside, true);
+  linkBoxEl = box;
+  suggest();
+  setTimeout(() => { input.focus(); input.select(); });
+}
+
+/** Strg/Cmd+K: Link einfügen; eine URL über markierten Text einfügen macht daraus [Text](URL) (auch am Handy). */
+function linkInsert(notes) {
+  return [
+    Prec.highest(keymap.of([{ key: 'Mod-k', run: (view) => { openLinkBox(view, notes); return true; } }])),
+    EditorView.domEventHandlers({
+      paste(e, view) {
+        const url = e.clipboardData?.getData('text/plain')?.trim();
+        const sel = view.state.selection.main;
+        if (!url || sel.empty || !/^(?:https?:\/\/|mailto:)\S+$/i.test(url)) return false;
+        const text = view.state.sliceDoc(sel.from, sel.to);
+        if (text.includes('\n') || /[[\]]/.test(text)) return false;
+        e.preventDefault();
+        const insert = `[${text}](${url})`;
+        view.dispatch({ changes: { from: sel.from, to: sel.to, insert }, selection: { anchor: sel.from + insert.length }, userEvent: 'input.paste' });
+        return true;
+      },
+    }),
   ];
 }
 
@@ -824,6 +983,7 @@ function continueList(view) {
  *         prompt (siehe prompts.js, nur am Desktop), tags (siehe tags.js: Tag-Vorschläge),
  *         locked(text) → [{ from, to }] + onLocked() (gesperrte Stellen, siehe lockedRanges),
  *         onCursorLine(line) (Zeile mit dem Cursor hat gewechselt, -1 = ohne Fokus),
+ *         notes() → [{ title }] (Vorschläge für Notiz-Links bei Strg/Cmd+K),
  *         saveImage(file) → Promise<Markdown-Link> }
  * Gibt { view, value, set(text), focus(), jumpToLine(i), refresh(), destroy() } zurück.
  */
@@ -861,6 +1021,7 @@ export function createEditor(opts) {
     opts.tags ? tagComplete(opts.tags) : [],
     opts.locked ? lockedRanges(opts.locked, opts.onLocked) : [],
     opts.saveImage ? imagePaste(opts.saveImage) : [],
+    linkInsert(opts.notes),
     EditorView.updateListener.of((u) => { if (u.docChanged) opts.onChange?.(u.state.doc.toString()); }),
     // Zeile mit dem Cursor (-1 = Editor ohne Fokus), z. B. um eine Frage erst nach dem Verlassen der Zeile zu prüfen
     opts.onCursorLine ? EditorView.updateListener.of((u) => {

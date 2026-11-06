@@ -102,6 +102,7 @@ export function createQuestionEditor(ui, opts) {
     ai: ui.ai,
     prompt: ui.desktop ? ui.prompts : null, // Eingabefeld beim Markieren nur am Computer
     tags: ui.tags,
+    notes: () => ui.core.list(), // Strg/Cmd+K: Vorschläge für Notiz-Links
     locked: opts.locked,
     onLocked: opts.onLocked,
     // Bilder relativ zum Ordner der neuen bzw. bearbeiteten Notizen auflösen
