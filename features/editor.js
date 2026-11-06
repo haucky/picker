@@ -14,6 +14,7 @@ import { sentenceAround } from './aicorrect.js';
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const WIKI_RE = /(!?)\[\[([^\]\n]+?)\]\]/g;
 const TAG_RE = /(^|[\s(,])(#[\p{L}\p{N}_\-/]*[\p{L}_\-][\p{L}\p{N}_\-/]*)/gu;
+const HIGHLIGHT_RE = /==(?=\S)([^=\n]*?\S)==/g; // ==markiert== (Obsidian)
 const INLINE_HIDE = { Emphasis: 'cm-em', StrongEmphasis: 'cm-strong', Strikethrough: 'cm-strike', InlineCode: 'cm-icode' };
 const INLINE_MARKS = new Set(['EmphasisMark', 'CodeMark', 'StrikethroughMark']);
 const CODE_NODES = new Set(['InlineCode', 'FencedCode', 'CodeBlock', 'CodeText']);
@@ -187,6 +188,7 @@ function livePreview({ openLink, resolveImage }) {
                 // nur der Linktext, hervorgehoben; antippen öffnet – die URL erscheint erst mit dem Cursor im Link
                 const shown = state.doc.sliceString(node.from + 1, textEnd) || href;
                 out.push(Decoration.replace({ widget: new WebLinkWidget(shown, href, openLink) }).range(node.from, node.to));
+                code.push([node.from, node.to]); // darin keine ==Markierung== (der Link ist schon ersetzt)
                 return false;
               }
               hide(node.from, node.from + 1);
@@ -258,6 +260,19 @@ function livePreview({ openLink, resolveImage }) {
           } else {
             const shown = (alias || target).trim();
             out.push(Decoration.replace({ widget: new LinkWidget(shown, target.split('#')[0].trim(), openLink) }).range(a, b));
+          }
+        }
+        // ==markiert==: die == nur sichtbar, wenn der Cursor im Bereich steht
+        for (const m of text.matchAll(HIGHLIGHT_RE)) {
+          const a = from + m.index;
+          const b = a + m[0].length;
+          if (inCode(a) || inCode(b - 1)) continue;
+          if (touches(a, b)) {
+            out.push(Decoration.mark({ class: 'cm-highlight' }).range(a, b));
+          } else {
+            hide(a, a + 2);
+            out.push(Decoration.mark({ class: 'cm-highlight' }).range(a + 2, b - 2));
+            hide(b - 2, b);
           }
         }
         for (const m of text.matchAll(TAG_RE)) {

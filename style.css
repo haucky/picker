@@ -411,6 +411,7 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .md-editor .cm-link, .md-editor .cm-wikilink { color: var(--violet); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .md-editor .cm-wikilink-src { color: var(--violet); }
 .md-editor .cm-tag { color: var(--cyan); }
+.md-editor .cm-highlight { background: var(--mark); color: var(--text); border-radius: 3px; }
 .md-editor .cm-hr { display: inline-block; width: 100%; border-top: 1px solid var(--line); vertical-align: middle; }
 .md-editor .cm-img { display: inline-block; vertical-align: top; border-radius: 8px; margin: 4px 6px 4px 0; }
 .md-editor .cm-img-missing { color: var(--muted); font-size: .9em; }
