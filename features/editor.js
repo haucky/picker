@@ -10,11 +10,12 @@ import {
 } from '../vendor/codemirror.js';
 import { parseSize, splitAlt, sizeImage } from './image.js';
 import { sentenceAround } from './aicorrect.js';
+import { HIGHLIGHT_COLORS, HIGHLIGHT_EMOJI_RE, splitHighlight } from './highlight.js';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const WIKI_RE = /(!?)\[\[([^\]\n]+?)\]\]/g;
 const TAG_RE = /(^|[\s(,])(#[\p{L}\p{N}_\-/]*[\p{L}_\-][\p{L}\p{N}_\-/]*)/gu;
-const HIGHLIGHT_RE = /==(?=\S)([^=\n]*?\S)==/g; // ==markiert== (Obsidian)
+const HIGHLIGHT_RE = /==(?=\S)([^=\n]*?\S)==/g; // ==markiert==, farbig ==🔴rot== (Obsidian, siehe highlight.js)
 const INLINE_HIDE = { Emphasis: 'cm-em', StrongEmphasis: 'cm-strong', Strikethrough: 'cm-strike', InlineCode: 'cm-icode' };
 const INLINE_MARKS = new Set(['EmphasisMark', 'CodeMark', 'StrikethroughMark']);
 const CODE_NODES = new Set(['InlineCode', 'FencedCode', 'CodeBlock', 'CodeText']);
@@ -74,6 +75,82 @@ class WebLinkWidget extends WidgetType {
     return a;
   }
   ignoreEvent() { return true; }
+}
+
+/** Farbknopf in einer Markierung (Cursor im Bereich): öffnet die Farbauswahl. */
+class SwatchWidget extends WidgetType {
+  constructor(color) { super(); this.color = color; }
+  eq(o) { return o.color === this.color; }
+  toDOM(view) {
+    const b = document.createElement('span');
+    b.className = 'cm-hl-swatch' + (this.color ? ' cm-hl-' + this.color : '');
+    b.title = 'Farbe der Markierung ändern';
+    b.setAttribute('role', 'button');
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', (e) => { e.preventDefault(); openHighlightPalette(view, view.posAtDOM(b), b.getBoundingClientRect()); });
+    return b;
+  }
+  ignoreEvent() { return true; }
+}
+
+let paletteEl = null;
+function closePalette() {
+  if (!paletteEl) return;
+  document.removeEventListener('pointerdown', paletteEl._outside, true);
+  document.removeEventListener('keydown', paletteEl._key, true);
+  paletteEl.remove();
+  paletteEl = null;
+}
+
+/**
+ * Farbauswahl für die Markierung, deren Inhalt bei `pos` beginnt (direkt hinter dem ersten ==): eine der sechs Farben
+ * (Emoji wird gesetzt bzw. ersetzt) oder „Markierung entfernen“.
+ */
+function openHighlightPalette(view, pos, rect) {
+  closePalette();
+  const box = document.createElement('div');
+  box.className = 'cm-hl-palette';
+  const apply = (emoji) => {
+    closePalette();
+    const doc = view.state.doc;
+    const old = HIGHLIGHT_EMOJI_RE.exec(doc.sliceString(pos, Math.min(doc.length, pos + 4)))?.[1] || '';
+    if (emoji != null) {
+      view.dispatch({ changes: { from: pos, to: pos + old.length, insert: emoji }, userEvent: 'input' });
+    } else { // entfernen: öffnende ==, Emoji und schließende ==
+      const line = doc.lineAt(pos);
+      const end = line.text.indexOf('==', pos - line.from + old.length);
+      if (end < 0) return;
+      const close = line.from + end;
+      view.dispatch({ changes: [{ from: pos - 2, to: pos + old.length }, { from: close, to: close + 2 }], userEvent: 'delete' });
+    }
+    view.focus();
+  };
+  for (const [emoji, name, label] of HIGHLIGHT_COLORS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cm-hl-choice cm-hl-' + name;
+    b.title = label;
+    b.setAttribute('aria-label', label);
+    b.addEventListener('mousedown', (e) => e.preventDefault());
+    b.addEventListener('click', () => apply(emoji));
+    box.append(b);
+  }
+  const rm = document.createElement('button');
+  rm.type = 'button';
+  rm.className = 'cm-hl-remove';
+  rm.textContent = '✕';
+  rm.title = 'Markierung entfernen';
+  rm.addEventListener('mousedown', (e) => e.preventDefault());
+  rm.addEventListener('click', () => apply(null));
+  box.append(rm);
+  document.body.append(box);
+  box.style.left = Math.max(8, Math.min(rect.left - 8, window.innerWidth - box.offsetWidth - 8)) + 'px';
+  box.style.top = Math.min(rect.bottom + 6, window.innerHeight - box.offsetHeight - 8) + 'px';
+  box._outside = (e) => { if (!box.contains(e.target)) closePalette(); };
+  box._key = (e) => { if (e.key === 'Escape') { e.preventDefault(); closePalette(); view.focus(); } };
+  document.addEventListener('pointerdown', box._outside, true);
+  document.addEventListener('keydown', box._key, true);
+  paletteEl = box;
 }
 
 class ImageWidget extends WidgetType {
@@ -262,16 +339,20 @@ function livePreview({ openLink, resolveImage }) {
             out.push(Decoration.replace({ widget: new LinkWidget(shown, target.split('#')[0].trim(), openLink) }).range(a, b));
           }
         }
-        // ==markiert==: die == nur sichtbar, wenn der Cursor im Bereich steht
+        // ==markiert== / ==🔴farbig==: == und Farb-Emoji nur sichtbar, wenn der Cursor im Bereich steht – dann
+        // auch ein Farbknopf zum Umstellen (wie in Obsidian)
         for (const m of text.matchAll(HIGHLIGHT_RE)) {
           const a = from + m.index;
           const b = a + m[0].length;
           if (inCode(a) || inCode(b - 1)) continue;
-          if (touches(a, b)) {
-            out.push(Decoration.mark({ class: 'cm-highlight' }).range(a, b));
+          const { color, emoji, text: inner } = splitHighlight(m[1]);
+          const cls = 'cm-highlight' + (color ? ' cm-hl-' + color : '');
+          if (touches(a, b) || !inner.trim()) {
+            out.push(Decoration.mark({ class: cls }).range(a, b));
+            out.push(Decoration.widget({ widget: new SwatchWidget(color), side: 1 }).range(a + 2));
           } else {
-            hide(a, a + 2);
-            out.push(Decoration.mark({ class: 'cm-highlight' }).range(a + 2, b - 2));
+            hide(a, a + 2 + emoji.length);
+            out.push(Decoration.mark({ class: cls }).range(a + 2 + emoji.length, b - 2));
             hide(b - 2, b);
           }
         }

@@ -1,6 +1,7 @@
 // Einfaches Markdown (Obsidian-Dialekt) → DOM, ohne innerHTML. Überschriften, Listen (verschachtelt, Checkboxen),
 // Zitate/Callouts, Code, Tabellen, Trennlinien, fett/kursiv/durchgestrichen/==markiert==, Links, [[Wikilinks]], Bilder.
 import { h } from './dom.js';
+import { splitHighlight } from './highlight.js';
 import { parseSize, splitAlt, sizeImage } from './image.js';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
@@ -181,7 +182,10 @@ function inline(text, ctx) {
     else if (g.url != null) frag.append(external(g.url, g.url));
     else if (g.bold != null || g.bold2 != null) frag.append(h('strong', {}, inline(g.bold ?? g.bold2, ctx)));
     else if (g.strike != null) frag.append(h('del', {}, inline(g.strike, ctx)));
-    else if (g.mark != null) frag.append(h('mark', {}, inline(g.mark, ctx)));
+    else if (g.mark != null) {
+      const { color, text: t } = splitHighlight(g.mark); // ==🔴…== (Farben wie in Obsidian 1.14)
+      frag.append(h('mark', color ? { class: 'hl-' + color } : {}, inline(t, ctx)));
+    }
     else if (g.em != null || g.em2 != null) frag.append(h('em', {}, inline(g.em ?? g.em2, ctx)));
     else if (g.tag != null) frag.append(h('span', { class: 'md-tag' }, g.tag));
   }

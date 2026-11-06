@@ -412,6 +412,27 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .md-editor .cm-wikilink-src { color: var(--violet); }
 .md-editor .cm-tag { color: var(--cyan); }
 .md-editor .cm-highlight { background: var(--mark); color: var(--text); border-radius: 3px; }
+/* Farbige Markierungen (==🔴…==, siehe highlight.js): gleiche Farben im Editor, auf der Review-Rückseite und in der Auswahl */
+.cm-hl-red, mark.hl-red { --hl: rgba(220, 50, 47, .28); }
+.cm-hl-orange, mark.hl-orange { --hl: rgba(203, 75, 22, .28); }
+.cm-hl-yellow, mark.hl-yellow { --hl: rgba(181, 137, 0, .35); }
+.cm-hl-green, mark.hl-green { --hl: rgba(133, 153, 0, .30); }
+.cm-hl-blue, mark.hl-blue { --hl: rgba(38, 139, 210, .28); }
+.cm-hl-purple, mark.hl-purple { --hl: rgba(108, 113, 196, .30); }
+.md-editor .cm-highlight[class*="cm-hl-"], mark[class*="hl-"] { background: var(--hl); }
+.cm-hl-swatch {
+  display: inline-block; width: 12px; height: 12px; margin: 0 3px; border-radius: 50%; vertical-align: -1px; cursor: pointer;
+  background: var(--hl, var(--mark)); border: 1px solid var(--muted);
+}
+.cm-hl-palette {
+  position: fixed; z-index: 15; display: flex; gap: 6px; align-items: center; padding: 6px 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 6px 24px rgba(0, 0, 0, .3);
+}
+.cm-hl-choice { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); background: var(--hl); cursor: pointer; }
+.cm-hl-choice.cm-hl-red { background: var(--red); } .cm-hl-choice.cm-hl-orange { background: var(--orange); }
+.cm-hl-choice.cm-hl-yellow { background: var(--yellow); } .cm-hl-choice.cm-hl-green { background: var(--green); }
+.cm-hl-choice.cm-hl-blue { background: var(--accent); } .cm-hl-choice.cm-hl-purple { background: var(--violet); }
+.cm-hl-remove { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; }
 .md-editor .cm-hr { display: inline-block; width: 100%; border-top: 1px solid var(--line); vertical-align: middle; }
 .md-editor .cm-img { display: inline-block; vertical-align: top; border-radius: 8px; margin: 4px 6px 4px 0; }
 .md-editor .cm-img-missing { color: var(--muted); font-size: .9em; }
