@@ -334,6 +334,11 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .md h3, .md h4, .md h5, .md h6 { margin: 18px 0 6px; font-size: 1.05rem; }
 .md h3 { font-size: 1.2rem; }
 .md ul, .md ol { padding-left: 22px; }
+/* Aufzählungszeichen je Tiefe: • → ◦ → ▪ (danach wieder von vorn) */
+.md ul { list-style-type: disc; }
+.md :is(ul, ol) ul { list-style-type: circle; }
+.md :is(ul, ol) :is(ul, ol) ul { list-style-type: square; }
+.md :is(ul, ol) :is(ul, ol) :is(ul, ol) ul { list-style-type: disc; }
 .md li { margin: 2px 0; }
 .md li > ul, .md li > ol { margin: 2px 0; }
 .md li.task { list-style: none; margin-left: -20px; }
@@ -395,6 +400,8 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; }
 .md-editor .cm-quote { border-left: 3px solid var(--line); padding-left: 12px; color: var(--text-2); font-style: italic; }
 .md-editor .cm-bullet, .md-editor .cm-listmark { color: var(--muted); }
 .md-editor .cm-bullet { display: inline-block; min-width: .7em; }
+.md-editor .cm-bullet-1 { font-size: .9em; }
+.md-editor .cm-bullet-2 { font-size: .8em; }
 .md-editor .cm-task { width: 1em; height: 1em; margin: 0 .3em 0 0; vertical-align: -0.12em; accent-color: var(--accent); }
 .cm-linkbox {
   position: fixed; z-index: 15; width: min(320px, calc(100vw - 16px)); padding: 6px; display: flex; flex-direction: column; gap: 2px;

@@ -24,9 +24,25 @@ const markdownLang = new LanguageSupport(new Language(defineLanguageFacet(), mar
 
 /* ---------- Widgets ---------- */
 
+// Aufzählungszeichen je Verschachtelungstiefe (wie in Obsidian/Browsern): •, ◦, ▪, dann wieder von vorn.
+const BULLETS = ['•', '◦', '▪'];
+
+/** Wie tief eine Liste verschachtelt ist (0 = oberste Ebene); zählt umgebende Listen beider Arten. */
+function listDepth(node) {
+  let depth = -1;
+  for (let n = node; n; n = n.parent) if (n.name === 'BulletList' || n.name === 'OrderedList') depth++;
+  return Math.max(depth, 0);
+}
+
 class BulletWidget extends WidgetType {
-  eq() { return true; }
-  toDOM() { const s = document.createElement('span'); s.className = 'cm-bullet'; s.textContent = '•'; return s; }
+  constructor(depth) { super(); this.depth = depth; }
+  eq(o) { return o.depth === this.depth; }
+  toDOM() {
+    const s = document.createElement('span');
+    s.className = 'cm-bullet cm-bullet-' + (this.depth % BULLETS.length);
+    s.textContent = BULLETS[this.depth % BULLETS.length];
+    return s;
+  }
 }
 
 class CheckboxWidget extends WidgetType {
@@ -288,7 +304,7 @@ function livePreview({ openLink, resolveImage }) {
                   out.push(Decoration.replace({ widget: new CheckboxWidget(task[2] !== ' ', node.to + 1) }).range(node.to + 1, node.to + 4));
                 }
               } else if (/^[-*+]$/.test(mark) && !lineActive(node.from)) {
-                out.push(Decoration.replace({ widget: new BulletWidget() }).range(node.from, node.to));
+                out.push(Decoration.replace({ widget: new BulletWidget(listDepth(node.node)) }).range(node.from, node.to));
               } else {
                 out.push(Decoration.mark({ class: 'cm-listmark' }).range(node.from, node.to));
               }
