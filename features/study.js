@@ -4,6 +4,7 @@ import { h, stableView } from './dom.js';
 import { createQuestionEditor, createIssues, questionLines, popMenu, closeMenu } from './qeditor.js';
 import { createConflicts } from './conflicts.js';
 import { printVL, exportName, withoutTodos } from './export.js';
+import { openDiagramDialog } from './aidiagram.js';
 import {
   CONFIG_PATH, parseDecks, inDeck, isConfig, today, dayToGerman, reviewState, nextReviewState, countStates, setVLTitle,
 } from './srs.js';
@@ -463,7 +464,7 @@ function questionBlock(title) {
   return { line: start, title, text: title + '?' + (body ? '\n' + body : ''), end };
 }
 
-/** Kontextmenü am Punkt einer Frage: oberste 3 Prompts aus Prompts.md, eigener Prompt, Umbenennen. */
+/** Kontextmenü am Punkt einer Frage: oberste 3 Prompts aus Prompts.md, eigener Prompt, Diagramm, Umbenennen. */
 function openQuestionMenu(line, rect) {
   if (!ed) return;
   closeMenu();
@@ -489,14 +490,29 @@ function openQuestionMenu(line, rect) {
     });
   };
   const item = (label, onclick, attrs = {}) => h('button', { type: 'button', class: 'qmenu-item', role: 'menuitem', onclick, ...attrs }, label);
+  const diagram = () => {
+    const block = questionBlock(title);
+    if (!block) return;
+    closeMenu();
+    openDiagramDialog({
+      question: block.text, title,
+      // ans Ende der Frage (im dann aktuellen Text)
+      insert: (code) => {
+        const b = questionBlock(title);
+        if (!b) return;
+        ed.cm.view.dispatch({ changes: { from: b.end, insert: '\n' + code }, scrollIntoView: true });
+      },
+    });
+  };
   const showMain = () => {
     const parts = [];
     if (ai) {
       const input = h('input', { type: 'text', class: 'qmenu-input', placeholder: '✦ Eigener Prompt oder Abkürzung …',
         enterkeyhint: 'send', onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); runPrompt(input.value); } } });
-      parts.push(input, ...ui.prompts.list().slice(0, 3).map((pr) => item('✦ ' + pr.name, () => runPrompt(pr.name), { title: pr.prompt })));
+      parts.push(input, ...ui.prompts.list().slice(0, 3).map((pr) => item('✦ ' + pr.name, () => runPrompt(pr.name), { title: pr.prompt })),
+        item('◇ Als Diagramm erklären', diagram, { title: 'Drei Mermaid-Diagramme vorschlagen, eins auswählen' }));
     } else if (ui.prompts) {
-      parts.push(h('div', { class: 'qmenu-note' }, 'KI: unter Settings → KI einrichten (lokal oder Tinfoil)'));
+      parts.push(h('div', { class: 'qmenu-note' }, 'KI: unter Settings → KI einrichten (Claude, lokal oder Tinfoil)'));
     }
     parts.push(h('div', { class: 'qmenu-sep' }), item('✎ Umbenennen', showRename));
     el.replaceChildren(...parts);

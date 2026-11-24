@@ -1,8 +1,9 @@
 // Einfaches Markdown (Obsidian-Dialekt) → DOM, ohne innerHTML. Überschriften, Listen (verschachtelt, Checkboxen),
-// Zitate/Callouts, Code, Tabellen, Trennlinien, fett/kursiv/durchgestrichen/==markiert==, Links, [[Wikilinks]], Bilder.
+// Zitate/Callouts, Code, ```mermaid-Diagramme (mermaid.js), Tabellen, Trennlinien, fett/kursiv/durchgestrichen/==markiert==, Links, [[Wikilinks]], Bilder.
 import { h } from './dom.js';
 import { splitHighlight } from './highlight.js';
 import { parseSize, splitAlt, sizeImage } from './image.js';
+import { isMermaidFence, mermaidElement } from './mermaid.js';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const LIST_RE = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
@@ -38,7 +39,7 @@ function blocks(lines, parent, ctx) {
       i++;
       while (i < lines.length && !lines[i].trim().startsWith(fence[1])) code.push(lines[i++]);
       i++;
-      parent.append(h('pre', {}, h('code', {}, code.join('\n'))));
+      parent.append(isMermaidFence(line) ? mermaidElement(code.join('\n')) : h('pre', {}, h('code', {}, code.join('\n'))));
       continue;
     }
 

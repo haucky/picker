@@ -1,6 +1,7 @@
 // Gemeinsamer Markdown-Editor (CodeMirror 6) mit Live-Vorschau wie in Obsidian: Markdown wird gerendert,
 // nur wo der Cursor steht, ist der Quelltext zu sehen (Inline-Formatierung pro Element, Überschriften,
-// Listen und Zitate pro Zeile). Ohne Fokus ist alles gerendert.
+// Listen und Zitate pro Zeile). Ohne Fokus ist alles gerendert. ```mermaid-Blöcke erscheinen als Diagramm
+// (mermaid.js), solange der Cursor nicht darin steht.
 import {
   EditorState, EditorView, ViewPlugin, Decoration, WidgetType, keymap, placeholder as cmPlaceholder, Prec,
   StateField, StateEffect, showTooltip, EditorSelection,
@@ -11,6 +12,7 @@ import {
 import { parseSize, splitAlt, sizeImage } from './image.js';
 import { sentenceAround } from './aicorrect.js';
 import { HIGHLIGHT_COLORS, HIGHLIGHT_EMOJI_RE, splitHighlight } from './highlight.js';
+import { isMermaidFence, mermaidElement } from './mermaid.js';
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i;
 const WIKI_RE = /(!?)\[\[([^\]\n]+?)\]\]/g;
@@ -381,6 +383,62 @@ function livePreview({ openLink, resolveImage }) {
     }
   }, { decorations: (v) => v.decorations });
 }
+
+/* ---------- Mermaid-Diagramme ---------- */
+
+/** Gerendertes Diagramm an Stelle eines ```mermaid-Blocks; antippen zeigt den Code (Cursor in die erste Zeile). */
+class MermaidWidget extends WidgetType {
+  constructor(code) { super(); this.code = code; }
+  eq(o) { return o.code === this.code; }
+  get estimatedHeight() { return 200; }
+  toDOM(view) {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-mermaid';
+    wrap.append(mermaidElement(this.code));
+    wrap.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const pos = view.posAtDOM(wrap);
+      view.dispatch({ selection: { anchor: view.state.doc.lineAt(pos).to } });
+      view.focus();
+    });
+    return wrap;
+  }
+  ignoreEvent() { return true; }
+}
+
+/**
+ * ```mermaid-Blöcke als Diagramm zeigen, außer der Cursor steht darin (dann der Code, wie in Obsidian). Blöcke über
+ * mehrere Zeilen ersetzen geht in CodeMirror nur aus einem StateField, nicht aus der Live-Vorschau (ViewPlugin).
+ */
+const FENCE_CLOSE_RE = /^\s*(`{3,}|~{3,})\s*$/;
+function mermaidDecorations(state) {
+  const out = [];
+  const sel = state.selection.ranges;
+  const doc = state.doc;
+  for (let n = 1; n <= doc.lines; n++) {
+    const first = doc.line(n);
+    if (!isMermaidFence(first.text)) continue;
+    const open = /^\s*(`{3,}|~{3,})/.exec(first.text)[1];
+    let m = n + 1;
+    while (m <= doc.lines) {
+      const c = FENCE_CLOSE_RE.exec(doc.line(m).text);
+      if (c && c[1][0] === open[0] && c[1].length >= open.length) break;
+      m++;
+    }
+    if (m > doc.lines) break; // nicht geschlossen: Code zeigen
+    const last = doc.line(m);
+    n = m;
+    if (sel.some((r) => r.from <= last.to && r.to >= first.from)) continue;
+    const code = m > first.number + 1 ? doc.sliceString(doc.line(first.number + 1).from, doc.line(m - 1).to) : '';
+    out.push(Decoration.replace({ widget: new MermaidWidget(code), block: true }).range(first.from, last.to));
+  }
+  return Decoration.set(out);
+}
+const mermaidBlocks = StateField.define({
+  create: mermaidDecorations,
+  update: (deco, tr) => (tr.docChanged || tr.selection ? mermaidDecorations(tr.state) : deco),
+  provide: (f) => EditorView.decorations.from(f),
+});
 
 /* ---------- Zusätzliche Markierungen (z. B. Study: Fragen, Todos, Fehler) ---------- */
 
@@ -1125,6 +1183,7 @@ export function createEditor(opts) {
     ])),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     livePreview({ openLink: opts.openLink, resolveImage }),
+    mermaidBlocks,
     opts.decorate ? extraMarks(opts.decorate) : [],
     opts.placeholder ? cmPlaceholder(opts.placeholder) : [],
     opts.spell ? spellSuggest(opts.spell) : [],

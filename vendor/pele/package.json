@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Nur zum Holen von vendor/pele.js (./build.sh). Die App selbst braucht kein npm.",
+  "dependencies": {
+    "pele": "1.13.0"
+  }
+}

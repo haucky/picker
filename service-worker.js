@@ -1,7 +1,7 @@
 'use strict';
 
 // Version erhöhen, wenn sich die App-Shell ändert.
-const CACHE = 'vault-picker-v57';
+const CACHE = 'vault-picker-v58';
 const SHELL = [
   './',
   './index.html',
@@ -33,6 +33,8 @@ const SHELL = [
   './features/export.js',
   './features/llm.js',
   './features/secret.js',
+  './features/mermaid.js',
+  './features/aidiagram.js',
   './features/aicorrect.js',
   './features/prompts.js',
   './features/tags.js',
@@ -45,6 +47,7 @@ const SHELL = [
   './vendor/fonts/lmroman10-bolditalic.woff2',
   './vendor/fonts/lmmono10-regular.woff2',
   './vendor/codemirror.js',
+  './vendor/pele.js', // Mermaid-Diagramme, auch offline
   './manifest.webmanifest',
   './icons/icon.svg',
   './icons/icon-192.png',

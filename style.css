@@ -652,6 +652,46 @@ img.img-big { max-width: 100%; }
   border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: cm-spin .8s linear infinite;
 }
 
+/* Mermaid-Diagramme (Pele, features/mermaid.js): Farben aus den Solarized-Tokens, schlicht – wechselt mit hell/dunkel */
+.mermaid-view {
+  --pele-bg: var(--bg); --pele-fg: var(--text); --pele-muted: var(--muted); --pele-line: var(--text-2);
+  --pele-surface: var(--surface); --pele-surface-alt: var(--line); --pele-border: var(--muted);
+  --pele-accent: var(--accent); --pele-error: var(--red); --pele-critical: var(--red);
+  --pele-fg-on-dark: #fdf6e3; --pele-fg-on-light: #073642;
+  --pele-font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --pele-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --pele-radius: 6px;
+  --pele-series-1: var(--accent); --pele-series-2: var(--cyan); --pele-series-3: var(--green); --pele-series-4: var(--yellow);
+  --pele-series-5: var(--orange); --pele-series-6: var(--red); --pele-series-7: var(--magenta); --pele-series-8: var(--violet);
+  margin: 10px 0; overflow-x: auto; text-align: center;
+}
+.mermaid-view svg { max-width: 100%; height: auto; }
+.mermaid-error { color: var(--red); font-size: .85rem; margin-bottom: 6px; text-align: left; white-space: pre-wrap; }
+.mermaid-view pre { text-align: left; }
+.mermaid-loading { color: var(--muted); font-size: .85rem; }
+.md-editor .cm-mermaid { padding: 4px 0; cursor: text; }
+.md-editor .cm-mermaid .mermaid-view { margin: 4px 0; }
+.print-doc .mermaid-view {
+  --pele-bg: #fff; --pele-fg: #000; --pele-muted: #555; --pele-line: #000; --pele-surface: #f3f3f3;
+  --pele-surface-alt: #e6e6e6; --pele-border: #000; --pele-accent: #000; --pele-font: "LM Roman", serif;
+  break-inside: avoid;
+}
+
+/* KI: Diagramm zur Frage – drei Vorschläge zum Auswählen (features/aidiagram.js) */
+.diagram-dialog { width: min(980px, calc(100vw - 32px)); top: 6vh; max-height: 86vh; }
+.diagram-ask { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.diagram-ask .qmenu-input { flex: 1; min-width: 0; margin: 0; }
+.diagram-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; padding: 12px 0; }
+.diagram-card {
+  display: flex; flex-direction: column; gap: 6px; padding: 10px; cursor: pointer;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+}
+.diagram-card:hover { border-color: var(--accent); }
+.diagram-card.pending, .diagram-card.failed { cursor: default; border-style: dashed; }
+.diagram-card .mermaid-view { flex: 1; margin: 0; }
+.diagram-title { color: var(--text-2); font-size: .85rem; font-weight: 600; }
+.diagram-use { align-self: flex-end; }
+
 /* Review-Status der Fragen (Study): Punkt vor der Frage, leichte Hintergrundfarbe, Balken in den Listen */
 .md-editor .cm-dot-wrap { display: inline-block; vertical-align: middle; margin-right: 6px; }
 .md-editor .cm-dot {
