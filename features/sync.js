@@ -6,7 +6,7 @@ import { exportName, setExportName } from './export.js';
 import {
   apiKey, setApiKey, chat, listModels, listLocalModels, TIERS, TIER_LABEL, DEFAULT_LOCAL_URL, DEFAULT_LOCAL,
   DEFAULT_TINFOIL, localOn, setLocalOn, localUrl, setLocalUrl, localModel, setLocalModel, tinfoilOn, setTinfoilOn,
-  tinfoilModel, setTinfoilModel, unloadLocal, DEFAULT_OPENAI_URL, openaiOn, setOpenaiOn, openaiUrl, setOpenaiUrl,
+  tinfoilModel, setTinfoilModel, unloadLocal, DEFAULT_OPENAI_URL, DEFAULT_OPENAI, openaiOn, setOpenaiOn, openaiUrl, setOpenaiUrl,
   openaiModel, setOpenaiModel, listOpenaiModels, probeOpenai,
 } from './llm.js';
 import { PROMPTS_PATH, parsePrompts } from './prompts.js';
@@ -108,9 +108,6 @@ const textField = (label, value, placeholder, onchange, attrs = {}) => h('label'
 const toggle = (label, on, onchange) => h('label', { class: 'settings-toggle' },
   h('input', { type: 'checkbox', checked: on, onchange: (e) => onchange(e.target.checked) }), h('span', {}, label));
 
-/** Gespeicherter Wert (leer = Standard). */
-const get = (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
-
 /** KI über einen OpenAI-kompatiblen Server (ohne Token): an/aus, Server, Modelle je Stufe, Testen. */
 function openaiAI() {
   const test = h('button', { type: 'button', class: 'btn small', onclick: async () => {
@@ -121,9 +118,10 @@ function openaiAI() {
       if (!have.length) throw new Error('Server nennt keine Modelle (/models)');
       if (!openaiOn()) { setOpenaiOn(true); onBox.checked = true; }
       await probeOpenai({ force: true });
-      const models = [...new Set(TIERS.map(openaiModel))];
-      for (const model of models) await chat({ user: 'Antworte nur mit: OK', model, via: 'openai', maxTokens: 5, timeout: 120000 });
-      ui.toast(`OpenAI-kompatibel verbunden ✓ (${models.join(', ')})`, 4000);
+      const missing = TIERS.map(openaiModel).filter((m) => !have.includes(m));
+      if (missing.length) throw new Error(`Modell fehlt auf dem Server: ${missing.join(', ')} (vorhanden: ${have.join(', ')})`);
+      for (const tier of TIERS) await chat({ user: 'Antworte nur mit: OK', tier, via: 'openai', maxTokens: 5, timeout: 120000 });
+      ui.toast(`OpenAI-kompatibel verbunden ✓ (${TIERS.map(openaiModel).join(', ')})`, 4000);
     } catch (err) {
       ui.toast('Fehlgeschlagen: ' + (err.name === 'TimeoutError' || err.name === 'TypeError'
         ? `Server unter ${openaiUrl()} nicht erreichbar (läuft er, erlaubt er CORS?)` : err.message), 7000);
@@ -136,8 +134,8 @@ function openaiAI() {
   return [
     h('div', { class: 'settings-key' }, box, test),
     textField('Server', openaiUrl(), DEFAULT_OPENAI_URL, (e) => { setOpenaiUrl(e.target.value); e.target.value = openaiUrl(); }),
-    ...TIERS.map((tier) => textField('Modell ' + TIER_LABEL[tier], get('ai-openai-model:' + tier), 'erstes des Servers',
-      (e) => { setOpenaiModel(tier, e.target.value); e.target.value = get('ai-openai-model:' + tier); }, { list: 'ai-openai-models' })),
+    ...TIERS.map((tier) => textField('Modell ' + TIER_LABEL[tier], openaiModel(tier), DEFAULT_OPENAI[tier],
+      (e) => { setOpenaiModel(tier, e.target.value); e.target.value = openaiModel(tier); }, { list: 'ai-openai-models' })),
   ];
 }
 
@@ -393,7 +391,8 @@ export default {
       ...openaiAI(),
       h('p', { class: 'hint left' },
         'Ohne API-Token. Die App prüft von selbst, ob der Server läuft (alle 30 s erneut, solange nicht), und nimmt ihn dann ' +
-        'vor allen anderen. Modell leer = das erste, das der Server nennt.'),
+        'vor allen anderen. Schnell (Standard haiku, ohne Reasoning): Korrektur, ähnliche Fragen vergleichen. Gut (Standard opus): ' +
+        'KI-Aktionen an einer Frage, Prompts auf markierten Text. Weitere Modelle des Servers: fable, sonnet. Leeres Feld = Standard.'),
       openaiModels,
       h('h3', { class: 'settings-sub' }, 'Lokal (Ollama)'),
       ...localAI(),

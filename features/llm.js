@@ -35,13 +35,16 @@ export const localModel = (tier) => get('ai-local-model:' + tier) || DEFAULT_LOC
 export const setLocalModel = (tier, v) => put('ai-local-model:' + tier, String(v).trim(), DEFAULT_LOCAL[tier]);
 
 export const DEFAULT_OPENAI_URL = 'http://127.0.0.1:3000/v1';
-/** OpenAI-kompatibel: standardmäßig an (abschaltbar); Modell leer = erstes Modell, das der Server unter /models nennt. */
+/** OpenAI-kompatibel: standardmäßig an (abschaltbar). Modelle laut Server (/models): fable, opus, sonnet, haiku. */
+export const DEFAULT_OPENAI = { fast: 'haiku', good: 'opus' };
+/** reasoning_effort je Stufe (OpenAI-Parameter): „schnell“ ganz ohne Reasoning, „gut“ ohne Angabe (Standard des Servers). */
+const OPENAI_EFFORT = { fast: 'none', good: null };
 export const openaiOn = () => get('ai-openai-off') !== '1';
 export const setOpenaiOn = (on) => { put('ai-openai-off', on ? '' : '1'); openaiOk = null; };
 export const openaiUrl = () => (get('ai-openai-url') || DEFAULT_OPENAI_URL).replace(/\/+$/, '');
 export const setOpenaiUrl = (v) => { put('ai-openai-url', String(v).trim().replace(/\/+$/, ''), DEFAULT_OPENAI_URL); openaiOk = null; };
-export const openaiModel = (tier) => get('ai-openai-model:' + tier) || openaiModels[0] || '';
-export const setOpenaiModel = (tier, v) => put('ai-openai-model:' + tier, String(v).trim(), '');
+export const openaiModel = (tier) => get('ai-openai-model:' + tier) || DEFAULT_OPENAI[tier];
+export const setOpenaiModel = (tier, v) => put('ai-openai-model:' + tier, String(v).trim(), DEFAULT_OPENAI[tier]);
 
 export const tinfoilOn = () => get('ai-tinfoil-on') === '1';
 export const setTinfoilOn = (on) => put('ai-tinfoil-on', on ? '1' : '');
@@ -69,7 +72,6 @@ const RETRY_LOCAL = 60000;
 // OpenAI-kompatibler Server: genauso, nur wird er von selbst geprüft (probeOpenai), damit er Vorrang bekommt, sobald er läuft.
 let openaiOk = null;
 let openaiFailedAt = 0;
-let openaiModels = []; // Modell-IDs laut Server (/models)
 let openaiProbe = null;
 const RETRY_OPENAI = 30000;
 const openaiRetryDue = () => openaiOk !== false || Date.now() - openaiFailedAt > RETRY_OPENAI;
@@ -83,7 +85,7 @@ export function probeOpenai({ force = false } = {}) {
   if (!force && openaiOk === true) return Promise.resolve(true);
   if (!force && !openaiRetryDue()) return Promise.resolve(false);
   openaiProbe = listOpenaiModels({ signal: AbortSignal.timeout(2000) })
-    .then((ids) => { openaiModels = ids; openaiOk = true; return true; }, () => { openaiDown(); return false; })
+    .then(() => { openaiOk = true; return true; }, () => { openaiDown(); return false; })
     .finally(() => { openaiProbe = null; });
   return openaiProbe;
 }
@@ -217,18 +219,15 @@ export async function listOpenaiModels({ signal } = {}) {
   return ((await res.json()).data || []).map((m) => m.id);
 }
 
-async function chatOpenai({ model, messages, maxTokens, temperature, signal, onDelta }) {
-  if (!model) {
-    await probeOpenai({ force: true });
-    model = openaiModels[0];
-    if (!model) throw new LLMError('no-openai', `OpenAI-kompatibler Server (${openaiUrl()}) nicht erreichbar`);
-  }
+async function chatOpenai({ model, tier, messages, maxTokens, temperature, signal, onDelta }) {
+  const body = { model, messages, max_tokens: maxTokens, temperature, stream: !!onDelta };
+  if (OPENAI_EFFORT[tier]) body.reasoning_effort = OPENAI_EFFORT[tier];
   let res;
   try {
     res = await fetch(openaiUrl() + '/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: !!onDelta }),
+      body: JSON.stringify(body),
       signal,
     });
   } catch {
@@ -315,7 +314,7 @@ export async function chat({
   if (!via && openaiOn() && openaiOk !== true && openaiRetryDue()) await probeOpenai();
   if (via === 'openai' || (!via && openaiUsable())) {
     try {
-      const out = await chatOpenai({ ...opts, model: model || openaiModel(tier) });
+      const out = await chatOpenai({ ...opts, tier, model: model || openaiModel(tier) });
       openaiOk = true;
       return out;
     } catch (err) {
