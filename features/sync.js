@@ -6,8 +6,8 @@ import { exportName, setExportName } from './export.js';
 import {
   apiKey, setApiKey, chat, listModels, listLocalModels, TIERS, TIER_LABEL, DEFAULT_LOCAL_URL, DEFAULT_LOCAL,
   DEFAULT_TINFOIL, localOn, setLocalOn, localUrl, setLocalUrl, localModel, setLocalModel, tinfoilOn, setTinfoilOn,
-  tinfoilModel, setTinfoilModel, unloadLocal, DEFAULT_OPENAI_URL, DEFAULT_OPENAI, hasOpenaiKey, openaiKeyLoaded, setOpenaiKey, openaiOn, setOpenaiOn, openaiUrl, setOpenaiUrl,
-  openaiModel, setOpenaiModel, listOpenaiModels, probeOpenai,
+  tinfoilModel, setTinfoilModel, unloadLocal, DEFAULT_CLAUDE, hasClaudeKey, claudeKeyLoaded, setClaudeKey, claudeOn, setClaudeOn,
+  claudeModel, setClaudeModel, listClaudeModels,
 } from './llm.js';
 import { PROMPTS_PATH, parsePrompts } from './prompts.js';
 import { contextOf } from './studydoc.js';
@@ -99,7 +99,7 @@ function nameInput() {
   });
 }
 
-let localModels, tinfoilModels, openaiModels, promptsInfo;
+let localModels, tinfoilModels, claudeModels, promptsInfo;
 
 const textField = (label, value, placeholder, onchange, attrs = {}) => h('label', { class: 'settings-model' },
   h('span', { class: 'kv-label' }, label),
@@ -108,28 +108,26 @@ const textField = (label, value, placeholder, onchange, attrs = {}) => h('label'
 const toggle = (label, on, onchange) => h('label', { class: 'settings-toggle' },
   h('input', { type: 'checkbox', checked: on, onchange: (e) => onchange(e.target.checked) }), h('span', {}, label));
 
-/** KI über einen OpenAI-kompatiblen Server (ohne Token): an/aus, Server, Modelle je Stufe, Testen. */
-function openaiAI() {
+/** KI über Claude (Anthropic-API): an/aus, Key (verschlüsselt gespeichert), Modelle je Stufe, Testen. */
+function claudeAI() {
   const test = h('button', { type: 'button', class: 'btn small', onclick: async () => {
+    if (!hasClaudeKey()) return ui.toast('Erst einen Claude-API-Key eintragen.');
     test.disabled = true;
     try {
-      const have = await listOpenaiModels({ signal: AbortSignal.timeout(5000) });
-      openaiModels.replaceChildren(...have.map((id) => h('option', { value: id })));
-      if (!have.length) throw new Error('Server nennt keine Modelle (/models)');
-      if (!openaiOn()) { setOpenaiOn(true); onBox.checked = true; }
-      await probeOpenai({ force: true });
-      const missing = TIERS.map(openaiModel).filter((m) => !have.includes(m));
-      if (missing.length) throw new Error(`Modell fehlt auf dem Server: ${missing.join(', ')} (vorhanden: ${have.join(', ')})`);
-      for (const tier of TIERS) await chat({ user: 'Antworte nur mit: OK', tier, via: 'openai', maxTokens: 5, timeout: 120000 });
-      ui.toast(`OpenAI-kompatibel verbunden ✓ (${TIERS.map(openaiModel).join(', ')})`, 4000);
+      const have = await listClaudeModels({ signal: AbortSignal.timeout(10000) });
+      claudeModels.replaceChildren(...have.map((id) => h('option', { value: id })));
+      const missing = TIERS.map(claudeModel).filter((m) => !have.includes(m));
+      if (missing.length) throw new Error(`Modell unbekannt: ${missing.join(', ')}`);
+      if (!claudeOn()) { setClaudeOn(true); onBox.checked = true; }
+      for (const tier of TIERS) await chat({ user: 'Antworte nur mit: OK', tier, via: 'claude', maxTokens: 5, timeout: 60000 });
+      ui.toast(`Claude verbunden ✓ (${TIERS.map(claudeModel).join(', ')})`, 4000);
     } catch (err) {
-      ui.toast('Fehlgeschlagen: ' + (err.name === 'TimeoutError' || err.name === 'TypeError'
-        ? `Server unter ${openaiUrl()} nicht erreichbar (läuft er, erlaubt er CORS?)` : err.message), 7000);
+      ui.toast('Fehlgeschlagen: ' + (err.name === 'TimeoutError' ? 'keine Antwort von Claude' : err.message), 7000);
     } finally {
       test.disabled = false;
     }
   } }, 'Testen');
-  const box = toggle('Verwenden, wenn erreichbar (hat dann Vorrang)', openaiOn(), (on) => setOpenaiOn(on));
+  const box = toggle('Claude verwenden (hat Vorrang, wenn Key gespeichert und online)', claudeOn(), (on) => setClaudeOn(on));
   const onBox = box.querySelector('input');
   // Key nie zurück ins Feld schreiben: es zeigt nur, ob einer gespeichert ist; Eingabe ersetzt ihn, ✕ löscht ihn.
   const keyInput = h('input', {
@@ -138,28 +136,27 @@ function openaiAI() {
     onchange: async (e) => {
       const v = e.target.value.trim();
       if (!v) return;
-      try { await setOpenaiKey(v); ui.toast('Claude-API-Key verschlüsselt gespeichert ✓'); } catch (err) { ui.toast('Speichern fehlgeschlagen: ' + err.message, 5000); }
+      try { await setClaudeKey(v); ui.toast('Claude-API-Key verschlüsselt gespeichert ✓'); } catch (err) { ui.toast('Speichern fehlgeschlagen: ' + err.message, 5000); }
       e.target.value = '';
       showKey();
     },
   });
   const clearKey = h('button', { type: 'button', class: 'btn small', title: 'Key löschen', onclick: async () => {
-    await setOpenaiKey('');
+    await setClaudeKey('');
     ui.toast('Claude-API-Key gelöscht');
     showKey();
   } }, '✕');
   const showKey = () => {
-    keyInput.placeholder = hasOpenaiKey() ? 'Claude-API-Key gespeichert (neuen eingeben zum Ersetzen)' : 'Claude-API-Key';
-    clearKey.hidden = !hasOpenaiKey();
+    keyInput.placeholder = hasClaudeKey() ? 'Claude-API-Key gespeichert (neuen eingeben zum Ersetzen)' : 'Claude-API-Key';
+    clearKey.hidden = !hasClaudeKey();
   };
   showKey();
-  openaiKeyLoaded().then(showKey);
+  claudeKeyLoaded().then(showKey);
   return [
-    h('div', { class: 'settings-key' }, box, test),
-    h('div', { class: 'settings-key' }, keyInput, clearKey),
-    textField('Server', openaiUrl(), DEFAULT_OPENAI_URL, (e) => { setOpenaiUrl(e.target.value); e.target.value = openaiUrl(); }),
-    ...TIERS.map((tier) => textField('Modell ' + TIER_LABEL[tier], openaiModel(tier), DEFAULT_OPENAI[tier],
-      (e) => { setOpenaiModel(tier, e.target.value); e.target.value = openaiModel(tier); }, { list: 'ai-openai-models' })),
+    box,
+    h('div', { class: 'settings-key' }, keyInput, clearKey, test),
+    ...TIERS.map((tier) => textField('Modell ' + TIER_LABEL[tier], claudeModel(tier), DEFAULT_CLAUDE[tier],
+      (e) => { setClaudeModel(tier, e.target.value); e.target.value = claudeModel(tier); }, { list: 'ai-claude-models' })),
   ];
 }
 
@@ -213,7 +210,7 @@ function tinfoilAI() {
     }
   } }, 'Testen');
   return [
-    toggle('Tinfoil verwenden (wenn lokal aus oder nicht erreichbar)', tinfoilOn(), (on) => setTinfoilOn(on)),
+    toggle('Tinfoil verwenden (wenn Claude und lokal nicht verfügbar)', tinfoilOn(), (on) => setTinfoilOn(on)),
     h('div', { class: 'settings-key' }, input, test),
     ...TIERS.map((tier) => textField('Modell ' + TIER_LABEL[tier], tinfoilModel(tier), DEFAULT_TINFOIL[tier],
       (e) => { setTinfoilModel(tier, e.target.value); e.target.value = tinfoilModel(tier); }, { list: 'ai-tinfoil-models' })),
@@ -355,9 +352,9 @@ function renderPairs(status) {
 /** Verfügbare Modelle als Vorschläge für die Modell-Felder (einmal pro Sitzung; Tinfoil nur eingeschaltet mit Key). */
 let modelsLoaded = false;
 function loadModels() {
-  if (openaiOn()) {
-    listOpenaiModels({ signal: AbortSignal.timeout(3000) })
-      .then((ids) => openaiModels.replaceChildren(...ids.map((id) => h('option', { value: id }))), () => {});
+  if (claudeOn() && navigator.onLine) {
+    claudeKeyLoaded().then(() => hasClaudeKey() && listClaudeModels({ signal: AbortSignal.timeout(5000) }))
+      .then((ids) => ids && claudeModels.replaceChildren(...ids.map((id) => h('option', { value: id }))), () => {});
   }
   if (localOn()) {
     listLocalModels({ signal: AbortSignal.timeout(3000) })
@@ -394,7 +391,7 @@ export default {
     core = ui.core;
     info = h('div', { class: 'kv' });
     localModels = h('datalist', { id: 'ai-local-models' });
-    openaiModels = h('datalist', { id: 'ai-openai-models' });
+    claudeModels = h('datalist', { id: 'ai-claude-models' });
     tinfoilModels = h('datalist', { id: 'ai-tinfoil-models' });
     promptsInfo = h('div', {});
     logEl = h('div', {});
@@ -408,17 +405,17 @@ export default {
       h('h2', { class: 'section' }, 'KI'),
       h('p', { class: 'hint left' },
         'Für alle KI-Funktionen: Korrektur und Prompts auf markierten Text am Computer, KI-Aktionen an einer Frage ' +
-        '(Punkt lang drücken bzw. Rechtsklick) auch am Handy, ähnliche Fragen im Editor. Läuft der OpenAI-kompatible Server, ' +
-        'wird immer er gefragt; sonst das lokale Modell (nichts verlässt den Computer), sonst Tinfoil, wenn eingeschaltet. ' +
+        '(Punkt lang drücken bzw. Rechtsklick) auch am Handy, ähnliche Fragen im Editor. Ist ein Claude-API-Key ' +
+        'gespeichert und das Gerät online, wird immer Claude gefragt; sonst das lokale Modell (nichts verlässt den Computer), sonst Tinfoil, wenn eingeschaltet. ' +
         'Ohne alles gibt es einfach keine KI-Funktionen.'),
-      h('h3', { class: 'settings-sub' }, 'OpenAI-kompatibel (127.0.0.1:3000)'),
-      ...openaiAI(),
+      h('h3', { class: 'settings-sub' }, 'Claude (Anthropic)'),
+      ...claudeAI(),
       h('p', { class: 'hint left' },
-        'Der Claude-API-Key geht nur als Bearer-Token an diesen Server und liegt verschlüsselt im Browser (AES, Schlüssel ' +
-        'nicht auslesbar); ohne Key wird ohne Token gefragt. Die App prüft von selbst, ob der Server läuft (alle 30 s erneut, solange nicht), und nimmt ihn dann ' +
-        'vor allen anderen. Schnell (Standard haiku, ohne Reasoning): Korrektur, ähnliche Fragen vergleichen. Gut (Standard opus): ' +
-        'KI-Aktionen an einer Frage, Prompts auf markierten Text. Weitere Modelle des Servers: fable, sonnet. Leeres Feld = Standard.'),
-      openaiModels,
+        'Direkt an api.anthropic.com. Der Key liegt verschlüsselt in diesem Browser (AES, Schlüssel nicht auslesbar) und ' +
+        'geht nur an Anthropic; Key unter console.anthropic.com anlegen. Ist Claude nicht erreichbar oder überlastet, ' +
+        'übernimmt lokal bzw. Tinfoil. Schnell (Standard Haiku, ohne Thinking): Korrektur, ähnliche Fragen vergleichen. ' +
+        'Gut (Standard Opus, mit Thinking): KI-Aktionen an einer Frage, Prompts auf markierten Text. Leeres Feld = Standard.'),
+      claudeModels,
       h('h3', { class: 'settings-sub' }, 'Lokal (Ollama)'),
       ...localAI(),
       h('p', { class: 'hint left' },

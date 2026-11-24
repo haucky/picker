@@ -1,14 +1,18 @@
-// Sprachmodell-Zugriff für alle Features. Vorrang hat ein OpenAI-kompatibler Server unter http://127.0.0.1:3000/v1
-// (optional mit Claude-API-Key, verschlüsselt gespeichert über secret.js): Ist er erreichbar, wird immer er genommen (abschaltbar in Settings). Sonst gilt: Standard ist ein lokales Modell über Ollama am eigenen Computer (nichts
-// verlässt das Gerät); Tinfoil Private Inference (verschlüsselt, Attestierung der Enclave über das offizielle SDK) ist
-// Option B und muss eigens eingeschaltet werden – auch wenn ein Key eingetragen ist. Ist beides an, wird lokal zuerst
-// versucht und nur bei nicht erreichbarem Server Tinfoil genommen. Ohne beides gibt es keine KI-Funktionen; die App
-// funktioniert sonst normal. Der lokale Server wird erst angesprochen, wenn er in Settings eingeschaltet wurde (sonst
-// fragt Chrome Leute ohne Ollama nach dem Zugriff aufs lokale Netzwerk).
+// Sprachmodell-Zugriff für alle Features. Mehrere Anbieter hinter einer gemeinsamen Schnittstelle (PROVIDERS, s. u.);
+// gefragt wird der erste nutzbare in ORDER, bei „nicht erreichbar“ der nächste. Einen Anbieter tauschen oder ergänzen
+// heißt: ein Objekt mit dieser Schnittstelle schreiben und in PROVIDERS/ORDER eintragen – die Features merken davon nichts.
 //
-// Zwei Stufen: „schnell“ (kurze Antworten, z. B. Korrektur, Fragen vergleichen) und „gut“ (Prompts auf Text).
-// Einstellungen bleiben im Browser (localStorage); der Tinfoil-Key geht nur an Tinfoil. Das Tinfoil-SDK
-// (vendor/tinfoil.js, ~400 KB) wird erst bei der ersten Tinfoil-Anfrage geladen.
+//   1. Claude (Anthropic, https://api.anthropic.com, native Messages-API): Vorrang, sobald ein Claude-API-Key
+//      gespeichert ist (verschlüsselt über secret.js) und das Gerät online ist; abschaltbar in Settings.
+//   2. Lokal über Ollama am eigenen Computer (nichts verlässt das Gerät). Wird erst angesprochen, wenn in Settings
+//      eingeschaltet (sonst fragt Chrome Leute ohne Ollama nach dem Zugriff aufs lokale Netzwerk).
+//   3. Tinfoil Private Inference (verschlüsselt, Attestierung der Enclave über das offizielle SDK); muss eigens
+//      eingeschaltet werden – auch wenn ein Key eingetragen ist. Das SDK (vendor/tinfoil.js, ~400 KB) wird erst bei der
+//      ersten Tinfoil-Anfrage geladen.
+// Ohne alles gibt es keine KI-Funktionen; die App funktioniert sonst normal.
+//
+// Zwei Stufen: „schnell“ (kurze Antworten, z. B. Korrektur, Fragen vergleichen) und „gut“ (Prompts auf Text,
+// KI-Aktionen an einer Frage). Einstellungen bleiben im Browser (localStorage); Keys gehen nur an ihren Anbieter.
 
 import { loadSecret, saveSecret } from './secret.js';
 
@@ -30,44 +34,38 @@ const get = (k, d = '') => { try { return localStorage.getItem(k) ?? d; } catch 
 const put = (k, v, d) => { try { if (v != null && v !== '' && v !== d) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* egal */ } };
 
 export const localOn = () => get('ai-local-on') === '1';
-export const setLocalOn = (on) => { put('ai-local-on', on ? '1' : ''); localOk = null; };
+export const setLocalOn = (on) => { put('ai-local-on', on ? '1' : ''); localReach.reset(); };
 export const localUrl = () => (get('ai-local-url') || get('embed-url') || DEFAULT_LOCAL_URL).replace(/\/+$/, '');
-export const setLocalUrl = (v) => { put('ai-local-url', String(v).trim().replace(/\/+$/, ''), DEFAULT_LOCAL_URL); localOk = null; };
+export const setLocalUrl = (v) => { put('ai-local-url', String(v).trim().replace(/\/+$/, ''), DEFAULT_LOCAL_URL); localReach.reset(); };
 export const localModel = (tier) => get('ai-local-model:' + tier) || DEFAULT_LOCAL[tier];
 export const setLocalModel = (tier, v) => put('ai-local-model:' + tier, String(v).trim(), DEFAULT_LOCAL[tier]);
 
-export const DEFAULT_OPENAI_URL = 'http://127.0.0.1:3000/v1';
-/** OpenAI-kompatibel: standardmäßig an (abschaltbar). Modelle laut Server (/models): fable, opus, sonnet, haiku. */
-export const DEFAULT_OPENAI = { fast: 'haiku', good: 'opus' };
-/** reasoning_effort je Stufe (OpenAI-Parameter): „schnell“ ganz ohne Reasoning, „gut“ ohne Angabe (Standard des Servers). */
-const OPENAI_EFFORT = { fast: 'none', good: null };
-export const openaiOn = () => get('ai-openai-off') !== '1';
-export const setOpenaiOn = (on) => { put('ai-openai-off', on ? '' : '1'); openaiOk = null; };
-export const openaiUrl = () => (get('ai-openai-url') || DEFAULT_OPENAI_URL).replace(/\/+$/, '');
-export const setOpenaiUrl = (v) => { put('ai-openai-url', String(v).trim().replace(/\/+$/, ''), DEFAULT_OPENAI_URL); openaiOk = null; };
-export const openaiModel = (tier) => get('ai-openai-model:' + tier) || DEFAULT_OPENAI[tier];
-export const setOpenaiModel = (tier, v) => put('ai-openai-model:' + tier, String(v).trim(), DEFAULT_OPENAI[tier]);
+/** Claude-Modelle je Stufe (IDs der Anthropic-API). */
+export const DEFAULT_CLAUDE = { fast: 'claude-haiku-5-5', good: 'claude-opus-5-5' };
+export const claudeOn = () => get('ai-claude-off') !== '1';
+export const setClaudeOn = (on) => { put('ai-claude-off', on ? '' : '1'); claudeReach.reset(); };
+export const claudeModel = (tier) => get('ai-claude-model:' + tier) || DEFAULT_CLAUDE[tier];
+export const setClaudeModel = (tier, v) => put('ai-claude-model:' + tier, String(v).trim(), DEFAULT_CLAUDE[tier]);
 
-// Claude-API-Key für den OpenAI-kompatiblen Server: verschlüsselt in IndexedDB (secret.js), entschlüsselt nur im Speicher.
-const OPENAI_KEY = 'openai-api-key';
-let openaiKeyValue = '';
-const openaiKeyReady = loadSecret(OPENAI_KEY).then((v) => { openaiKeyValue = v; });
+// Claude-API-Key: verschlüsselt in IndexedDB (secret.js), entschlüsselt nur im Speicher. Früher unter „openai-api-key“.
+const CLAUDE_KEY = 'claude-api-key';
+let claudeKeyValue = '';
+const claudeKeyReady = (async () => {
+  let v = await loadSecret(CLAUDE_KEY);
+  if (!v && (v = await loadSecret('openai-api-key'))) {
+    await saveSecret(CLAUDE_KEY, v).catch(() => {});
+    await saveSecret('openai-api-key', '').catch(() => {});
+  }
+  claudeKeyValue = v;
+})().catch(() => {});
 /** Ist ein Key gespeichert? (nach dem Laden; vorher ggf. noch false) */
-export const hasOpenaiKey = () => !!openaiKeyValue;
-export const openaiKeyLoaded = () => openaiKeyReady;
-export async function setOpenaiKey(v) {
-  openaiKeyValue = String(v || '').trim();
-  openaiOk = null;
-  await saveSecret(OPENAI_KEY, openaiKeyValue);
+export const hasClaudeKey = () => !!claudeKeyValue;
+export const claudeKeyLoaded = () => claudeKeyReady;
+export async function setClaudeKey(v) {
+  claudeKeyValue = String(v || '').trim();
+  claudeReach.reset();
+  await saveSecret(CLAUDE_KEY, claudeKeyValue);
 }
-async function openaiHeaders(json) {
-  await openaiKeyReady;
-  const hdr = json ? { 'Content-Type': 'application/json' } : {};
-  if (openaiKeyValue) hdr.Authorization = 'Bearer ' + openaiKeyValue;
-  return hdr;
-}
-const keyHint = (status) => (status === 401 || status === 403
-  ? (openaiKeyValue ? ' – Claude-API-Key falsch?' : ' – Claude-API-Key fehlt (Settings → KI)') : '');
 
 export const tinfoilOn = () => get('ai-tinfoil-on') === '1';
 export const setTinfoilOn = (on) => put('ai-tinfoil-on', on ? '1' : '');
@@ -88,50 +86,23 @@ export function setApiKey(key) {
   } catch { /* egal */ }
 }
 
-// Lokaler Server erreichbar? null = unbekannt (wird beim nächsten Aufruf versucht), false = zuletzt nicht erreichbar.
-let localOk = null;
-let localFailedAt = 0;
-const RETRY_LOCAL = 60000;
-// OpenAI-kompatibler Server: genauso, nur wird er von selbst geprüft (probeOpenai), damit er Vorrang bekommt, sobald er läuft.
-let openaiOk = null;
-let openaiFailedAt = 0;
-let openaiProbe = null;
-const RETRY_OPENAI = 30000;
-const openaiRetryDue = () => openaiOk !== false || Date.now() - openaiFailedAt > RETRY_OPENAI;
-const openaiUsable = () => openaiOn() && openaiOk === true;
-function openaiDown() { openaiOk = false; openaiFailedAt = Date.now(); }
-
-/** Prüfen, ob der OpenAI-kompatible Server läuft (GET /models, kurz); merkt sich das Ergebnis und die Modelle. */
-export function probeOpenai({ force = false } = {}) {
-  if (!openaiOn()) return Promise.resolve(false);
-  if (openaiProbe) return openaiProbe;
-  if (!force && openaiOk === true) return Promise.resolve(true);
-  if (!force && !openaiRetryDue()) return Promise.resolve(false);
-  openaiProbe = listOpenaiModels({ signal: AbortSignal.timeout(2000) })
-    .then(() => { openaiOk = true; return true; }, () => { openaiDown(); return false; })
-    .finally(() => { openaiProbe = null; });
-  return openaiProbe;
-}
-
-const localUsable = () => localOn() && (localOk !== false || Date.now() - localFailedAt > RETRY_LOCAL);
-const tinfoilUsable = () => tinfoilOn() && !!apiKey() && navigator.onLine;
-
 /**
- * Kann gerade angefragt werden (OpenAI-kompatibler Server erreichbar, lokal eingeschaltet oder Tinfoil eingeschaltet
- * mit Key und online)? Stößt nebenbei die Prüfung des OpenAI-kompatiblen Servers an (Ergebnis gilt ab dem nächsten Aufruf).
+ * Erreichbarkeit eines Anbieters merken: nach „nicht erreichbar“ eine Weile überspringen (dann der nächste in ORDER),
+ * danach wieder versuchen.
  */
-export const llmAvailable = () => { probeOpenai(); return openaiUsable() || localUsable() || tinfoilUsable(); };
-
-/** Welcher Anbieter als Nächstes gefragt wird: 'openai' | 'local' | 'tinfoil' | null. */
-export const provider = () => (openaiUsable() ? 'openai' : localUsable() ? 'local' : tinfoilUsable() ? 'tinfoil' : null);
-
-/** Modell für einen Zweck ('correct' | 'prompt' | 'judge') bzw. eine Stufe beim gerade genutzten Anbieter (z. B. für Caches). */
-export function modelFor(purpose) {
-  const tier = TIER_OF[purpose] || purpose;
-  const p = provider();
-  if (p === 'openai') return 'openai:' + openaiModel(tier);
-  return p === 'tinfoil' ? 'tinfoil:' + tinfoilModel(tier) : 'local:' + localModel(tier);
+function reachability(retryMs) {
+  let ok = null; // null = unbekannt, true = zuletzt erreichbar, false = zuletzt nicht
+  let failedAt = 0;
+  return {
+    usable: () => ok !== false || Date.now() - failedAt > retryMs,
+    up: () => { ok = true; },
+    down: () => { ok = false; failedAt = Date.now(); },
+    reset: () => { ok = null; },
+  };
 }
+const localReach = reachability(60000);
+const claudeReach = reachability(30000);
+const tinfoilReach = reachability(30000);
 
 let client = null;    // Promise<TinfoilAI> für clientKey
 let clientKey = null;
@@ -154,7 +125,7 @@ function getClient() {
 
 /** Verbindung schon vorab aufbauen, damit die erste Anfrage schnell ist (Tinfoil: Attestierung). */
 export function warmUp() {
-  if (provider() === 'tinfoil') getClient().catch(() => {});
+  active()?.warmUp?.();
 }
 
 /** Promise, das bei Abbruch von `signal` sofort mit dessen Grund (AbortError/TimeoutError) abgelehnt wird. */
@@ -189,7 +160,7 @@ async function chatLocal({ model, messages, maxTokens, temperature, context, sig
     });
   } catch (err) {
     if (signal?.aborted) throw signal.reason;
-    throw new LLMError('no-local', `Lokaler KI-Server (${localUrl()}) nicht erreichbar`);
+    throw new LLMError('unreachable', `Lokaler KI-Server (${localUrl()}) nicht erreichbar`);
   }
   if (!res.ok) {
     const msg = await res.text().catch(() => '');
@@ -233,37 +204,74 @@ export async function listLocalModels({ signal } = {}) {
   return ((await res.json()).models || []).map((m) => m.name).sort();
 }
 
-/* ---------- OpenAI-kompatibel (z. B. http://127.0.0.1:3000/v1, Key als Bearer-Token, falls gespeichert) ---------- */
+/* ---------- Claude (Anthropic, native Messages-API) ---------- */
 
-/** Modelle auf dem OpenAI-kompatiblen Server (IDs, in der Reihenfolge des Servers). */
-export async function listOpenaiModels({ signal } = {}) {
-  const res = await fetch(openaiUrl() + '/models', { headers: await openaiHeaders(false), signal });
-  if (!res.ok) throw new Error('OpenAI-Server: ' + res.status + keyHint(res.status));
+const CLAUDE_URL = 'https://api.anthropic.com/v1';
+const CLAUDE_VERSION = '2026-10-21';
+/**
+ * Zusätze je Stufe. Schnell: ohne Thinking (Haiku erlaubt das abzuschalten). Gut: Thinking an (adaptiv, Standard-Effort
+ * des Modells); dafür bekommt die Antwort Platz zum Nachdenken zusätzlich zu maxTokens. Kein temperature – ab API-Version
+ * 2026-10-21 lehnt die API es ab.
+ */
+const CLAUDE_TIER = {
+  fast: { body: { thinking: { type: 'disabled' } }, thinkRoom: 0 },
+  good: { body: {}, thinkRoom: 8000 },
+};
+
+async function claudeHeaders() {
+  await claudeKeyReady;
+  if (!claudeKeyValue) throw new LLMError('no-key', 'Kein Claude-API-Key (Settings → KI)');
+  return {
+    'Content-Type': 'application/json',
+    'x-api-key': claudeKeyValue,
+    'anthropic-version': CLAUDE_VERSION,
+    // Ohne diesen Header verweigert die API Anfragen direkt aus dem Browser (CORS). Der Key gehört dem Nutzer selbst
+    // und steht nicht im ausgelieferten Code.
+    'anthropic-dangerous-direct-browser-access': 'true',
+  };
+}
+
+/** Fehlerantwort der API → LLMError (401/403: Key; 429/5xx/529: gerade nicht nutzbar → nächster Anbieter). */
+async function claudeError(res) {
+  let msg = '';
+  try { msg = (await res.json()).error?.message || ''; } catch { /* egal */ }
+  const s = res.status;
+  if (s === 401 || s === 403) return new LLMError('no-key', 'Claude-API-Key ungültig (Settings → KI)');
+  if (s === 404) return new LLMError('no-model', 'Claude: Modell unbekannt – ' + msg);
+  if (s === 429 || s >= 500) return new LLMError('unreachable', `Claude gerade nicht verfügbar (${s}) ${msg}`);
+  return new LLMError('claude-error', `Claude: ${s} ${msg}`.slice(0, 300));
+}
+
+/** Modell-IDs, die die API anbietet. */
+export async function listClaudeModels({ signal } = {}) {
+  const res = await fetch(CLAUDE_URL + '/models?limit=100', { headers: await claudeHeaders(), signal });
+  if (!res.ok) throw await claudeError(res);
   return ((await res.json()).data || []).map((m) => m.id);
 }
 
-async function chatOpenai({ model, tier, messages, maxTokens, temperature, signal, onDelta }) {
-  const body = { model, messages, max_tokens: maxTokens, temperature, stream: !!onDelta };
-  if (OPENAI_EFFORT[tier]) body.reasoning_effort = OPENAI_EFFORT[tier];
-  const headers = await openaiHeaders(true);
+async function chatClaude({ model, tier, messages, maxTokens, signal, onDelta }) {
+  // Systemnachrichten gehen bei Claude ins Feld „system“, nicht in messages.
+  const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+  const conv = messages.filter((m) => m.role !== 'system');
+  const t = CLAUDE_TIER[tier] || CLAUDE_TIER.fast;
+  const body = { model, max_tokens: maxTokens + t.thinkRoom, messages: conv, ...t.body, stream: !!onDelta };
+  if (system) body.system = system;
+  const headers = await claudeHeaders();
   let res;
   try {
-    res = await fetch(openaiUrl() + '/chat/completions', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal,
-    });
+    res = await fetch(CLAUDE_URL + '/messages', { method: 'POST', headers, body: JSON.stringify(body), signal });
   } catch {
     if (signal?.aborted) throw signal.reason;
-    throw new LLMError('no-openai', `OpenAI-kompatibler Server (${openaiUrl()}) nicht erreichbar`);
+    throw new LLMError('unreachable', 'Claude nicht erreichbar');
   }
-  if (!res.ok) {
-    const msg = await res.text().catch(() => '');
-    throw new LLMError(res.status === 404 ? 'no-model' : 'openai-error', `OpenAI-Server: ${res.status}${keyHint(res.status)} ${msg.slice(0, 200)}`);
+  if (!res.ok) throw await claudeError(res);
+  const refused = () => new LLMError('refused', 'Claude hat die Anfrage abgelehnt');
+  if (!onDelta) {
+    const msg = await res.json();
+    if (msg.stop_reason === 'refusal') throw refused();
+    return (msg.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
   }
-  if (!onDelta) return (await res.json()).choices?.[0]?.message?.content ?? '';
-  // Server-Sent Events: Zeilen „data: {…}“, Schluss mit „data: [DONE]“
+  // Server-Sent Events: nur text_delta zählt (Thinking-Blöcke werden übergangen)
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
@@ -277,11 +285,17 @@ async function chatOpenai({ model, tier, messages, maxTokens, temperature, signa
       const line = buf.slice(0, nl).trim();
       buf = buf.slice(nl + 1);
       if (!line.startsWith('data:')) continue;
-      const data = line.slice(5).trim();
-      if (data === '[DONE]') return out;
-      let d;
-      try { d = JSON.parse(data).choices?.[0]?.delta?.content; } catch { continue; }
-      if (d) { out += d; onDelta(d, out); }
+      let ev;
+      try { ev = JSON.parse(line.slice(5)); } catch { continue; }
+      if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+        out += ev.delta.text;
+        onDelta(ev.delta.text, out);
+      } else if (ev.type === 'message_delta' && ev.delta?.stop_reason === 'refusal') {
+        throw refused();
+      } else if (ev.type === 'error') {
+        throw new LLMError(/overloaded|rate/i.test(ev.error?.type || '') && !out ? 'unreachable' : 'claude-error',
+          'Claude: ' + (ev.error?.message || ev.error?.type || 'Fehler'));
+      }
     }
   }
   return out;
@@ -290,7 +304,7 @@ async function chatOpenai({ model, tier, messages, maxTokens, temperature, signa
 /* ---------- Tinfoil ---------- */
 
 async function chatTinfoil({ model, messages, maxTokens, temperature, signal, onDelta }) {
-  if (!navigator.onLine) throw new LLMError('offline', 'Offline');
+  if (!navigator.onLine) throw new LLMError('unreachable', 'Offline');
   const c = await abortable(getClient(), signal);
   const body = { model, messages, max_tokens: maxTokens, temperature };
   if (onDelta) {
@@ -315,16 +329,61 @@ async function chatTinfoil({ model, messages, maxTokens, temperature, signal, on
   return res.choices?.[0]?.message?.content ?? '';
 }
 
-/* ---------- Gemeinsam ---------- */
+/* ---------- Anbieter (gemeinsame Schnittstelle) ---------- */
 
 /**
- * Eine Chat-Anfrage → Antworttext. Ist der OpenAI-kompatible Server erreichbar, immer er; sonst lokal zuerst (falls eingeschaltet), sonst bzw. bei nicht erreichbarem Server
- * Tinfoil (falls eingeschaltet).
+ * Jeder Anbieter: {
+ *   id, label,
+ *   usable(): jetzt anfragen? (eingeschaltet, eingerichtet, nicht gerade als unerreichbar gemerkt),
+ *   model(tier): Modell der Stufe,
+ *   chat({ model, tier, messages, maxTokens, temperature, context, signal, onDelta }) → Antworttext
+ *     (wirft LLMError('unreachable') wenn der Anbieter gerade nicht geht → nächster in ORDER),
+ *   reach: reachability(), warmUp?() }
+ * messages im Chat-Format [{ role: 'system'|'user'|'assistant', content }]; jeder Anbieter setzt sie selbst um.
+ */
+const PROVIDERS = {
+  claude: {
+    id: 'claude', label: 'Claude',
+    usable: () => claudeOn() && !!claudeKeyValue && navigator.onLine && claudeReach.usable(),
+    model: claudeModel, chat: chatClaude, reach: claudeReach,
+  },
+  local: {
+    id: 'local', label: 'Lokal (Ollama)',
+    usable: () => localOn() && localReach.usable(),
+    model: localModel, chat: chatLocal, reach: localReach,
+  },
+  tinfoil: {
+    id: 'tinfoil', label: 'Tinfoil',
+    usable: () => tinfoilOn() && !!apiKey() && navigator.onLine && tinfoilReach.usable(),
+    model: tinfoilModel, chat: chatTinfoil, reach: tinfoilReach,
+    warmUp: () => getClient().catch(() => {}),
+  },
+};
+/** Reihenfolge: der erste nutzbare wird gefragt, bei „nicht erreichbar“ der nächste. */
+const ORDER = ['claude', 'local', 'tinfoil'];
+
+const active = () => ORDER.map((id) => PROVIDERS[id]).find((p) => p.usable()) || null;
+
+/** Kann gerade angefragt werden (irgendein Anbieter eingerichtet und nutzbar)? */
+export const llmAvailable = () => !!active();
+
+/** Welcher Anbieter als Nächstes gefragt wird: 'claude' | 'local' | 'tinfoil' | null. */
+export const provider = () => active()?.id ?? null;
+
+/** Modell für einen Zweck ('correct' | 'prompt' | 'judge') bzw. eine Stufe beim gerade genutzten Anbieter (z. B. für Caches). */
+export function modelFor(purpose) {
+  const tier = TIER_OF[purpose] || purpose;
+  const p = active() || PROVIDERS.local;
+  return p.id + ':' + p.model(tier);
+}
+
+/**
+ * Eine Chat-Anfrage → Antworttext. Der erste nutzbare Anbieter in ORDER; ist er nicht erreichbar, der nächste.
  * opts: { system, user | messages, purpose ('correct' | 'prompt' | 'judge') bzw. tier ('fast' | 'good'),
- *         via ('openai' | 'local' | 'tinfoil': nur diesen Anbieter, z. B. zum Testen), model (überschreibt das der Stufe),
- *         maxTokens, temperature, context (Kontextfenster lokal, Standard je Stufe), timeout (ms), signal,
- *         onDelta(stück, bisher) – dann wird gestreamt }
- * Fehler: LLMError('no-ai'|'no-openai'|'no-local'|'no-model'|'no-key'|'offline'), DOMException AbortError (signal) bzw.
+ *         via ('claude' | 'local' | 'tinfoil': nur diesen Anbieter, z. B. zum Testen), model (überschreibt das der Stufe),
+ *         maxTokens, temperature (wo unterstützt), context (Kontextfenster lokal, Standard je Stufe), timeout (ms),
+ *         signal, onDelta(stück, bisher) – dann wird gestreamt }
+ * Fehler: LLMError('no-ai'|'unreachable'|'no-model'|'no-key'|'refused'|…), DOMException AbortError (signal) bzw.
  * TimeoutError (timeout), sonst API-Fehler.
  */
 export async function chat({
@@ -334,33 +393,23 @@ export async function chat({
   const signals = [signal, timeout ? AbortSignal.timeout(timeout) : null].filter(Boolean);
   const sig = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
   const msgs = messages || [system && { role: 'system', content: system }, { role: 'user', content: user }].filter(Boolean);
-  const opts = { messages: msgs, maxTokens, temperature, signal: sig, onDelta };
-  if (!via && openaiOn() && openaiOk !== true && openaiRetryDue()) await probeOpenai();
-  if (via === 'openai' || (!via && openaiUsable())) {
+  const candidates = via ? [PROVIDERS[via]] : ORDER.map((id) => PROVIDERS[id]).filter((p) => p.usable());
+  if (!candidates.length || !candidates[0]) throw new LLMError('no-ai', 'Keine KI eingerichtet (Settings → KI)');
+  let lastErr;
+  for (const p of candidates) {
     try {
-      const out = await chatOpenai({ ...opts, tier, model: model || openaiModel(tier) });
-      openaiOk = true;
+      const out = await p.chat({
+        messages: msgs, tier, model: model || p.model(tier), maxTokens, temperature, context, signal: sig, onDelta,
+      });
+      p.reach.up();
       return out;
     } catch (err) {
-      if (err?.code !== 'no-openai' || via === 'openai') throw err;
-      openaiDown(); // Server weg: lokal bzw. Tinfoil, in 30 s wieder prüfen
-      if (!localUsable() && !tinfoilUsable()) throw err;
+      if (err?.code !== 'unreachable' || via) throw err;
+      p.reach.down(); // eine Weile überspringen, nächsten Anbieter versuchen
+      lastErr = err;
     }
   }
-  if (via === 'local' || (!via && localUsable())) {
-    try {
-      const out = await chatLocal({ ...opts, context, model: model || localModel(tier) });
-      localOk = true;
-      return out;
-    } catch (err) {
-      if (err?.code !== 'no-local' || via === 'local') throw err;
-      localOk = false; // Server weg: eine Weile nicht mehr versuchen, ggf. Tinfoil
-      localFailedAt = Date.now();
-      if (!tinfoilUsable()) throw err;
-    }
-  }
-  if (via === 'tinfoil' || tinfoilUsable()) return chatTinfoil({ ...opts, model: model || tinfoilModel(tier) });
-  throw new LLMError('no-ai', 'Keine KI eingerichtet (Settings → KI)');
+  throw lastErr;
 }
 
 /** IDs der Modelle, die Tinfoil gerade anbietet (sortiert). */
