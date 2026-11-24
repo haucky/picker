@@ -1,5 +1,6 @@
 // Bilder: Größenangaben wie in Obsidian (![[bild.png|100]], ![[bild.png|100x145]], ![alt|100](pfad)) plus
 // small / normal / big, und Großansicht als Overlay beim Antippen – mit Blättern durch die Bilder derselben Zeile.
+// Dieselbe Großansicht gibt es für beliebige Elemente (openLightboxElement, z. B. Mermaid-Diagramme).
 
 const KEYWORDS = new Set(['small', 'normal', 'big']);
 
@@ -99,6 +100,24 @@ function button(cls, label, text, onClick) {
   b.textContent = text;
   b.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
   return b;
+}
+
+/**
+ * Großansicht für ein beliebiges Element (z. B. ein Mermaid-Diagramm): eingepasst; Antippen wechselt zur doppelten
+ * Größe (dann scrollbar). Hintergrund/×/Esc/Zurück schließt – wie bei Bildern.
+ */
+export function openLightboxElement(el) {
+  close();
+  el.classList.add('lightbox-el');
+  el.addEventListener('click', (e) => { e.stopPropagation(); box.classList.toggle('zoomed'); });
+  box = document.createElement('div');
+  box.className = 'lightbox lightbox-diagram';
+  box.setAttribute('role', 'dialog');
+  box.append(el, button('lightbox-close', 'Schließen', '×', leave));
+  box.addEventListener('click', leave);
+  document.body.append(box);
+  document.addEventListener('keydown', onKey, true);
+  history.pushState({ ...(history.state || {}), lightbox: true }, '');
 }
 
 /**

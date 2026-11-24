@@ -119,7 +119,7 @@ export function openDiagramDialog({ question, title, insert, focusBack = () => {
     c.className = 'diagram-card';
     c.replaceChildren(
       h('div', { class: 'diagram-title' }, d.title || 'Vorschlag ' + (i + 1)),
-      mermaidElement(code),
+      mermaidElement(code, { size: 'card' }),
       h('button', { type: 'button', class: 'btn small diagram-use', onclick: () => pick(code) }, 'Einfügen'));
     c.onclick = (e) => { if (!e.target.closest('button')) pick(code); };
     c.title = 'Antippen: am Ende der Frage einfügen';

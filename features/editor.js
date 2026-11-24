@@ -386,7 +386,10 @@ function livePreview({ openLink, resolveImage }) {
 
 /* ---------- Mermaid-Diagramme ---------- */
 
-/** Gerendertes Diagramm an Stelle eines ```mermaid-Blocks; antippen zeigt den Code (Cursor in die erste Zeile). */
+/**
+ * Gerendertes Diagramm an Stelle eines ```mermaid-Blocks, so groß wie ein Bild; antippen zeigt es groß (wie Bilder).
+ * Der Knopf „‹›“ (oder Antippen eines fehlerhaften Diagramms) setzt den Cursor hinein und zeigt den Code.
+ */
 class MermaidWidget extends WidgetType {
   constructor(code) { super(); this.code = code; }
   eq(o) { return o.code === this.code; }
@@ -394,13 +397,22 @@ class MermaidWidget extends WidgetType {
   toDOM(view) {
     const wrap = document.createElement('div');
     wrap.className = 'cm-mermaid';
-    wrap.append(mermaidElement(this.code));
-    wrap.addEventListener('mousedown', (e) => {
-      e.preventDefault();
+    const diagram = mermaidElement(this.code);
+    const edit = () => {
       const pos = view.posAtDOM(wrap);
       view.dispatch({ selection: { anchor: view.state.doc.lineAt(pos).to } });
       view.focus();
-    });
+    };
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cm-mermaid-edit';
+    btn.title = 'Code bearbeiten';
+    btn.setAttribute('aria-label', 'Code bearbeiten');
+    btn.textContent = '‹›';
+    btn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); edit(); });
+    wrap.append(diagram, btn);
+    wrap.addEventListener('mousedown', (e) => e.preventDefault()); // Fokus/Cursor nicht verschieben
+    wrap.addEventListener('click', () => { if (!diagram.classList.contains('ok')) edit(); });
     return wrap;
   }
   ignoreEvent() { return true; }
