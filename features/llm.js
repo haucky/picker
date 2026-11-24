@@ -1,5 +1,5 @@
 // Sprachmodell-Zugriff für alle Features. Vorrang hat ein OpenAI-kompatibler Server unter http://127.0.0.1:3000/v1
-// (ohne API-Token): Ist er erreichbar, wird immer er genommen (abschaltbar in Settings). Sonst gilt: Standard ist ein lokales Modell über Ollama am eigenen Computer (nichts
+// (optional mit Claude-API-Key, verschlüsselt gespeichert über secret.js): Ist er erreichbar, wird immer er genommen (abschaltbar in Settings). Sonst gilt: Standard ist ein lokales Modell über Ollama am eigenen Computer (nichts
 // verlässt das Gerät); Tinfoil Private Inference (verschlüsselt, Attestierung der Enclave über das offizielle SDK) ist
 // Option B und muss eigens eingeschaltet werden – auch wenn ein Key eingetragen ist. Ist beides an, wird lokal zuerst
 // versucht und nur bei nicht erreichbarem Server Tinfoil genommen. Ohne beides gibt es keine KI-Funktionen; die App
@@ -9,6 +9,8 @@
 // Zwei Stufen: „schnell“ (kurze Antworten, z. B. Korrektur, Fragen vergleichen) und „gut“ (Prompts auf Text).
 // Einstellungen bleiben im Browser (localStorage); der Tinfoil-Key geht nur an Tinfoil. Das Tinfoil-SDK
 // (vendor/tinfoil.js, ~400 KB) wird erst bei der ersten Tinfoil-Anfrage geladen.
+
+import { loadSecret, saveSecret } from './secret.js';
 
 const KEY_STORE = 'tinfoil-api-key';
 
@@ -45,6 +47,27 @@ export const openaiUrl = () => (get('ai-openai-url') || DEFAULT_OPENAI_URL).repl
 export const setOpenaiUrl = (v) => { put('ai-openai-url', String(v).trim().replace(/\/+$/, ''), DEFAULT_OPENAI_URL); openaiOk = null; };
 export const openaiModel = (tier) => get('ai-openai-model:' + tier) || DEFAULT_OPENAI[tier];
 export const setOpenaiModel = (tier, v) => put('ai-openai-model:' + tier, String(v).trim(), DEFAULT_OPENAI[tier]);
+
+// Claude-API-Key für den OpenAI-kompatiblen Server: verschlüsselt in IndexedDB (secret.js), entschlüsselt nur im Speicher.
+const OPENAI_KEY = 'openai-api-key';
+let openaiKeyValue = '';
+const openaiKeyReady = loadSecret(OPENAI_KEY).then((v) => { openaiKeyValue = v; });
+/** Ist ein Key gespeichert? (nach dem Laden; vorher ggf. noch false) */
+export const hasOpenaiKey = () => !!openaiKeyValue;
+export const openaiKeyLoaded = () => openaiKeyReady;
+export async function setOpenaiKey(v) {
+  openaiKeyValue = String(v || '').trim();
+  openaiOk = null;
+  await saveSecret(OPENAI_KEY, openaiKeyValue);
+}
+async function openaiHeaders(json) {
+  await openaiKeyReady;
+  const hdr = json ? { 'Content-Type': 'application/json' } : {};
+  if (openaiKeyValue) hdr.Authorization = 'Bearer ' + openaiKeyValue;
+  return hdr;
+}
+const keyHint = (status) => (status === 401 || status === 403
+  ? (openaiKeyValue ? ' – Claude-API-Key falsch?' : ' – Claude-API-Key fehlt (Settings → KI)') : '');
 
 export const tinfoilOn = () => get('ai-tinfoil-on') === '1';
 export const setTinfoilOn = (on) => put('ai-tinfoil-on', on ? '1' : '');
@@ -210,23 +233,24 @@ export async function listLocalModels({ signal } = {}) {
   return ((await res.json()).models || []).map((m) => m.name).sort();
 }
 
-/* ---------- OpenAI-kompatibel (z. B. http://127.0.0.1:3000/v1, ohne Token) ---------- */
+/* ---------- OpenAI-kompatibel (z. B. http://127.0.0.1:3000/v1, Key als Bearer-Token, falls gespeichert) ---------- */
 
 /** Modelle auf dem OpenAI-kompatiblen Server (IDs, in der Reihenfolge des Servers). */
 export async function listOpenaiModels({ signal } = {}) {
-  const res = await fetch(openaiUrl() + '/models', { signal });
-  if (!res.ok) throw new Error('OpenAI-Server: ' + res.status);
+  const res = await fetch(openaiUrl() + '/models', { headers: await openaiHeaders(false), signal });
+  if (!res.ok) throw new Error('OpenAI-Server: ' + res.status + keyHint(res.status));
   return ((await res.json()).data || []).map((m) => m.id);
 }
 
 async function chatOpenai({ model, tier, messages, maxTokens, temperature, signal, onDelta }) {
   const body = { model, messages, max_tokens: maxTokens, temperature, stream: !!onDelta };
   if (OPENAI_EFFORT[tier]) body.reasoning_effort = OPENAI_EFFORT[tier];
+  const headers = await openaiHeaders(true);
   let res;
   try {
     res = await fetch(openaiUrl() + '/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
       signal,
     });
@@ -236,7 +260,7 @@ async function chatOpenai({ model, tier, messages, maxTokens, temperature, signa
   }
   if (!res.ok) {
     const msg = await res.text().catch(() => '');
-    throw new LLMError(res.status === 404 ? 'no-model' : 'openai-error', `OpenAI-Server: ${res.status} ${msg.slice(0, 200)}`);
+    throw new LLMError(res.status === 404 ? 'no-model' : 'openai-error', `OpenAI-Server: ${res.status}${keyHint(res.status)} ${msg.slice(0, 200)}`);
   }
   if (!onDelta) return (await res.json()).choices?.[0]?.message?.content ?? '';
   // Server-Sent Events: Zeilen „data: {…}“, Schluss mit „data: [DONE]“

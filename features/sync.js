@@ -6,7 +6,7 @@ import { exportName, setExportName } from './export.js';
 import {
   apiKey, setApiKey, chat, listModels, listLocalModels, TIERS, TIER_LABEL, DEFAULT_LOCAL_URL, DEFAULT_LOCAL,
   DEFAULT_TINFOIL, localOn, setLocalOn, localUrl, setLocalUrl, localModel, setLocalModel, tinfoilOn, setTinfoilOn,
-  tinfoilModel, setTinfoilModel, unloadLocal, DEFAULT_OPENAI_URL, DEFAULT_OPENAI, openaiOn, setOpenaiOn, openaiUrl, setOpenaiUrl,
+  tinfoilModel, setTinfoilModel, unloadLocal, DEFAULT_OPENAI_URL, DEFAULT_OPENAI, hasOpenaiKey, openaiKeyLoaded, setOpenaiKey, openaiOn, setOpenaiOn, openaiUrl, setOpenaiUrl,
   openaiModel, setOpenaiModel, listOpenaiModels, probeOpenai,
 } from './llm.js';
 import { PROMPTS_PATH, parsePrompts } from './prompts.js';
@@ -131,8 +131,32 @@ function openaiAI() {
   } }, 'Testen');
   const box = toggle('Verwenden, wenn erreichbar (hat dann Vorrang)', openaiOn(), (on) => setOpenaiOn(on));
   const onBox = box.querySelector('input');
+  // Key nie zurück ins Feld schreiben: es zeigt nur, ob einer gespeichert ist; Eingabe ersetzt ihn, ✕ löscht ihn.
+  const keyInput = h('input', {
+    type: 'password', class: 'filter settings-name', placeholder: 'Claude-API-Key', autocomplete: 'off',
+    spellcheck: 'false', 'aria-label': 'Claude-API-Key',
+    onchange: async (e) => {
+      const v = e.target.value.trim();
+      if (!v) return;
+      try { await setOpenaiKey(v); ui.toast('Claude-API-Key verschlüsselt gespeichert ✓'); } catch (err) { ui.toast('Speichern fehlgeschlagen: ' + err.message, 5000); }
+      e.target.value = '';
+      showKey();
+    },
+  });
+  const clearKey = h('button', { type: 'button', class: 'btn small', title: 'Key löschen', onclick: async () => {
+    await setOpenaiKey('');
+    ui.toast('Claude-API-Key gelöscht');
+    showKey();
+  } }, '✕');
+  const showKey = () => {
+    keyInput.placeholder = hasOpenaiKey() ? 'Claude-API-Key gespeichert (neuen eingeben zum Ersetzen)' : 'Claude-API-Key';
+    clearKey.hidden = !hasOpenaiKey();
+  };
+  showKey();
+  openaiKeyLoaded().then(showKey);
   return [
     h('div', { class: 'settings-key' }, box, test),
+    h('div', { class: 'settings-key' }, keyInput, clearKey),
     textField('Server', openaiUrl(), DEFAULT_OPENAI_URL, (e) => { setOpenaiUrl(e.target.value); e.target.value = openaiUrl(); }),
     ...TIERS.map((tier) => textField('Modell ' + TIER_LABEL[tier], openaiModel(tier), DEFAULT_OPENAI[tier],
       (e) => { setOpenaiModel(tier, e.target.value); e.target.value = openaiModel(tier); }, { list: 'ai-openai-models' })),
@@ -390,7 +414,8 @@ export default {
       h('h3', { class: 'settings-sub' }, 'OpenAI-kompatibel (127.0.0.1:3000)'),
       ...openaiAI(),
       h('p', { class: 'hint left' },
-        'Ohne API-Token. Die App prüft von selbst, ob der Server läuft (alle 30 s erneut, solange nicht), und nimmt ihn dann ' +
+        'Der Claude-API-Key geht nur als Bearer-Token an diesen Server und liegt verschlüsselt im Browser (AES, Schlüssel ' +
+        'nicht auslesbar); ohne Key wird ohne Token gefragt. Die App prüft von selbst, ob der Server läuft (alle 30 s erneut, solange nicht), und nimmt ihn dann ' +
         'vor allen anderen. Schnell (Standard haiku, ohne Reasoning): Korrektur, ähnliche Fragen vergleichen. Gut (Standard opus): ' +
         'KI-Aktionen an einer Frage, Prompts auf markierten Text. Weitere Modelle des Servers: fable, sonnet. Leeres Feld = Standard.'),
       openaiModels,
