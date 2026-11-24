@@ -960,3 +960,6 @@ body.peek-open .panel { padding-bottom: calc(58dvh + 24px); } /* Editor lässt s
 .st-word { border: 0; background: none; padding: 2px 0; color: var(--text); font-size: calc(var(--w) * 1rem); }
 .st-word:hover { color: var(--accent); }
 .st-ask { color: var(--magenta); font-weight: 600; font-size: .9rem; margin-top: 4px; }
+
+/* ✦ KI für die ganze VL (Study, Leiste im VL-Editor) */
+.bar .vl-ai { color: var(--accent); font-size: 1.15rem; }

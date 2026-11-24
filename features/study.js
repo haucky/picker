@@ -4,7 +4,7 @@ import { h, stableView } from './dom.js';
 import { createQuestionEditor, createIssues, questionLines, popMenu, closeMenu } from './qeditor.js';
 import { createConflicts } from './conflicts.js';
 import { printVL, exportName, withoutTodos } from './export.js';
-import { openDiagramDialog } from './aidiagram.js';
+import { openDiagramDialog, openTimelineDialog, isTimelineTitle } from './aidiagram.js';
 import {
   CONFIG_PATH, parseDecks, inDeck, isConfig, today, dayToGerman, reviewState, nextReviewState, countStates, setVLTitle,
 } from './srs.js';
@@ -311,6 +311,8 @@ function renderEditor(text) {
     titleLine);
   ed.save = h('button', { type: 'button', class: 'btn small', onclick: save }, 'Speichern');
   const pdf = h('button', { type: 'button', class: 'btn small', onclick: exportPDF, title: 'Als PDF exportieren (Drucken → Als PDF speichern)' }, 'PDF');
+  const vlAi = h('button', { type: 'button', class: 'icon-btn vl-ai', 'aria-label': 'KI für die ganze VL', title: 'KI für die ganze VL',
+    onclick: (e) => openVLMenu(e.currentTarget.getBoundingClientRect()) }, '✦');
   ed.issuesBox = createIssues(jumpToLine);
   const host = h('div', { class: 'md-editor', 'aria-label': 'Fragen und Inhalte' });
 
@@ -318,7 +320,7 @@ function renderEditor(text) {
   const parts = [
     h('header', { class: 'bar' },
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Zurück', onclick: leave }, '←'),
-      title, pdf, ed.save),
+      title, vlAi, pdf, ed.save),
     h('p', { class: 'path' }, ...info),
   ];
   if (ed.issues.length) {
@@ -526,6 +528,62 @@ function openQuestionMenu(line, rect) {
     setTimeout(() => { input.focus(); input.select(); });
   };
   popMenu(rect, (box) => { el = box; showMain(); });
+}
+
+/* ---------- KI für die ganze VL ---------- */
+
+/** Menü am ✦ in der Leiste: Funktionen, die alle Fragen der VL nutzen. */
+function openVLMenu(rect) {
+  if (!ed) return;
+  const ai = ui.prompts && ui.prompts.available();
+  const item = (label, onclick, title) => h('button', { type: 'button', class: 'qmenu-item', role: 'menuitem', onclick, title }, label);
+  popMenu(rect, (box) => box.replaceChildren(
+    h('div', { class: 'qmenu-label' }, 'KI für die ganze VL'),
+    ai ? item('◇ Zeitstrahl der VL', () => { closeMenu(); timeline(); },
+      'Zeitstrahl aus allen Fragen – als eigene Frage oben in der VL (gibt es sie schon: Diagramm ersetzen)')
+      : h('div', { class: 'qmenu-note' }, 'KI: unter Settings → KI einrichten (Claude, lokal oder Tinfoil)')));
+}
+
+/** Zeitstrahl der VL erzeugen lassen und als Frage „Was ist der Zeitstrahl von …?“ ganz oben einfügen bzw. ersetzen. */
+function timeline() {
+  const items = parseDoc(ed.cm.value).items;
+  const questions = items.filter((it) => !isTimelineTitle(it.title))
+    .map((it) => ({ title: it.title, body: withoutTodos(it.body) }));
+  if (!questions.length) return ui.toast('Noch keine Fragen in dieser VL.');
+  const vlTitle = ed.deck.titles.get(ed.day);
+  openTimelineDialog({
+    questions,
+    label: vlTitle || `${ed.deck.name}, ${shortDay(ed.day)}`,
+    fallbackTitle: 'Was ist der Zeitstrahl von ' + (vlTitle || ed.deck.name).replace(/[\\/:*"<>|?]/g, ' ').trim(),
+    apply: applyTimeline,
+  });
+}
+
+/**
+ * Zeitstrahl übernehmen: Gibt es schon eine Zeitstrahl-Frage, wird ihr erstes Diagramm ersetzt (Titel, Status und
+ * übriger Inhalt bleiben); sonst kommt eine neue Frage ganz nach oben, Status „nicht abfragen“.
+ */
+function applyTimeline(title, block) {
+  if (!ed) return;
+  const text = ed.cm.value;
+  const existing = parseDoc(text).items.find((it) => isTimelineTitle(it.title));
+  let change;
+  if (existing) {
+    const b = questionBlock(existing.title);
+    const start = text.split('\n').slice(0, b.line + 1).reduce((n, l) => n + l.length + 1, 0);
+    const m = /^```mermaid[ \t]*\n[\s\S]*?\n```[ \t]*$/m.exec(text.slice(start, b.end + 1));
+    change = m ? { from: start + m.index, to: start + m.index + m[0].length, insert: block }
+      : { from: b.end, insert: '\n' + block };
+    title = existing.title;
+  } else {
+    change = { from: 0, insert: `${title}?\n${block}\n\n` };
+    ed.states.set(title, 'skip');
+  }
+  ed.cm.view.dispatch({ changes: change, scrollIntoView: true });
+  storeDraft();
+  ed.cm.refresh();
+  update();
+  ui.toast(existing ? 'Zeitstrahl ersetzt – Speichern nicht vergessen' : 'Zeitstrahl-Frage oben eingefügt – Speichern nicht vergessen', 3500);
 }
 
 /** Benennt eine Frage im Text um; beim Speichern zieht die Notiz mit Frontmatter (SR-Stand, Status) und Tags um. */
