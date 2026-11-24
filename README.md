@@ -203,7 +203,7 @@ Notiz-Editor (Suche → Notiz) und VL-Editor (Study) sind derselbe Markdown-Edit
 
 **Korrekturvorschläge (nur am Computer):** Steht der Cursor in einem Wort, das weder in den Wortlisten (Deutsch, Englisch, je ~50.000 häufigste Wörter) noch mindestens zweimal im eigenen Vault vorkommt, erscheinen darunter bis zu 4 Vorschläge – kleinster Tippabstand zuerst, dann das häufigste Wort. Klick oder Alt+1…4 ersetzt das Wort. Fachbegriffe, die man öfter in Notizen verwendet, gelten damit automatisch als bekannt. Die rote Unterkringelung kommt weiter vom Browser.
 
-**KI-Korrektur (nur am Computer):** Doppelklick auf ein Wort öffnet ein kleines Menü: oben sofort die Vorschläge aus dem Wörterbuch (wenn das Wort unbekannt ist), darunter bis zu 5 Vorschläge eines Sprachmodells, sobald sie da sind (Duplikate fallen weg). Klick oder Alt+1…9 ersetzt das Wort; Escape, Klick daneben oder Weitertippen schließt das Menü. An das Modell geht nur der Satz um das Wort. Dafür unter **Settings → KI** ein lokales Modell oder Tinfoil einrichten (siehe „KI: lokal oder Tinfoil“). Ohne KI gibt es nur die Wörterbuch-Vorschläge; antwortet das Modell nicht innerhalb von 5 Sekunden, steht „KI-Vorschläge nicht verfügbar“ im Menü. Gleiche Anfragen (Wort + Satz) werden bis zum Neuladen gemerkt.
+**KI-Korrektur (nur am Computer):** Doppelklick auf ein Wort öffnet ein kleines Menü: oben sofort die Vorschläge aus dem Wörterbuch (wenn das Wort unbekannt ist), darunter bis zu 5 Vorschläge eines Sprachmodells, sobald sie da sind (Duplikate fallen weg). Klick oder Alt+1…9 ersetzt das Wort; Escape, Klick daneben oder Weitertippen schließt das Menü. An das Modell geht nur der Satz um das Wort. Dafür unter **Settings → KI** ein lokales Modell oder Tinfoil einrichten (siehe „KI: OpenAI-kompatibel, lokal oder Tinfoil“). Ohne KI gibt es nur die Wörterbuch-Vorschläge; antwortet das Modell nicht innerhalb von 5 Sekunden, steht „KI-Vorschläge nicht verfügbar“ im Menü. Gleiche Anfragen (Wort + Satz) werden bis zum Neuladen gemerkt.
 
 **KI-Prompts auf markierten Text (nur am Computer):** Text markieren – darunter erscheint ein Eingabefeld (es nimmt den Fokus nicht weg, Weitertippen ersetzt wie gewohnt die Markierung; **Strg/Cmd+J** springt hinein). Dort einen eigenen Prompt tippen oder eine Abkürzung wie `summary` oder `explain` (Vorschläge darunter antippen, Tab ergänzt; hinter der Abkürzung sind weitere Anweisungen möglich, z. B. `summary auf Englisch`). Enter schickt Prompt + markierten Text ans Modell, die Antwort erscheint nach und nach in einem kleinen Dialog: **Einfügen** setzt sie in eine neue Zeile unter den Cursor und schließt, **Schließen**/Escape schließt ohne Einfügen, **Kopieren** kopiert sie.
 
@@ -217,9 +217,11 @@ Fasse den Text in höchstens 5 Stichpunkten zusammen.
 Erkläre {{text}} so, dass es ein Kind versteht.
 ```
 
-### KI: lokal oder Tinfoil
+### KI: OpenAI-kompatibel, lokal oder Tinfoil
 
-Alle KI-Funktionen (Korrektur, Prompts, KI-Aktionen an einer Frage, ähnliche Fragen) laufen über `features/llm.js` (`chat()` mit Streaming). **Standard ist ein lokales Modell** über [Ollama](https://ollama.com) am eigenen Computer – nichts verlässt das Gerät. **Tinfoil** ([tinfoil.sh](https://tinfoil.sh), verschlüsselt, die Enclave wird vor jeder Sitzung geprüft) ist Option B, z. B. am Handy: Es wird nur genutzt, wenn es unter **Settings → KI** eingeschaltet ist (auch mit eingetragenem Key) und lokal aus oder nicht erreichbar ist. Ohne beides gibt es keine KI-Funktionen, alles andere funktioniert normal. Der lokale Server wird erst angesprochen, wenn er eingeschaltet ist – wer kein Ollama hat, bekommt also auch keine Rückfrage von Chrome.
+Alle KI-Funktionen (Korrektur, Prompts, KI-Aktionen an einer Frage, ähnliche Fragen) laufen über `features/llm.js` (`chat()` mit Streaming). **Vorrang hat ein OpenAI-kompatibler Server** unter `http://127.0.0.1:3000/v1` (ohne API-Token): Die App prüft von selbst, ob er läuft (`GET /models`, beim ersten KI-Einsatz und danach alle 30 s erneut, solange er nicht erreichbar ist), und nimmt ihn dann immer – vor Ollama und Tinfoil. Fällt er während einer Anfrage aus, geht es mit lokal bzw. Tinfoil weiter. Unter **Settings → KI → OpenAI-kompatibel** lässt er sich abschalten, die Adresse ändern und je Stufe ein Modell eintragen (leer = das erste Modell, das der Server unter `/models` nennt); **Testen** prüft Server und Modelle. Der Server muss CORS für die App erlauben (Origin `https://oma.app`), Chrome fragt beim ersten Mal nach dem Zugriff aufs lokale Netzwerk → **Zulassen**. Embeddings für ähnliche Fragen kommen weiterhin von Ollama.
+
+Sonst gilt: **Standard ist ein lokales Modell** über [Ollama](https://ollama.com) am eigenen Computer – nichts verlässt das Gerät. **Tinfoil** ([tinfoil.sh](https://tinfoil.sh), verschlüsselt, die Enclave wird vor jeder Sitzung geprüft) ist Option B, z. B. am Handy: Es wird nur genutzt, wenn es unter **Settings → KI** eingeschaltet ist (auch mit eingetragenem Key) und lokal aus oder nicht erreichbar ist. Ohne beides gibt es keine KI-Funktionen, alles andere funktioniert normal. Der lokale Server wird erst angesprochen, wenn er eingeschaltet ist – wer kein Ollama hat, bekommt also auch keine Rückfrage von Chrome.
 
 Zwei Stufen, je Anbieter in Settings änderbar (leer = Standard):
 
@@ -262,7 +264,7 @@ Damit die Suche schnell ist, hält die App eine Kopie aller Notizen im Browser-S
 ### Settings
 
 - **Name:** steht beim PDF-Export einer VL unter dem Titel (wird nur im Browser gespeichert).
-- **KI:** lokal (Ollama: an/aus, Server, Modelle Schnell/Gut, **Testen**) und Tinfoil (an/aus, Key, Modelle, **Testen**), gefundene Abkürzungen aus `Prompts.md` – siehe „KI: lokal oder Tinfoil“.
+- **KI:** OpenAI-kompatibel (an/aus, Server, Modelle Schnell/Gut, **Testen**), lokal (Ollama: an/aus, Server, Modelle Schnell/Gut, **Testen**) und Tinfoil (an/aus, Key, Modelle, **Testen**), gefundene Abkürzungen aus `Prompts.md` – siehe „KI: OpenAI-kompatibel, lokal oder Tinfoil“.
 - **Ähnliche Fragen:** siehe unten.
 - **Darstellung** (Automatisch / Hell / Dunkel).
 - **Abgleich:** wann und wie zuletzt abgeglichen wurde, mit **Jetzt abgleichen** und **Komplett abgleichen**.

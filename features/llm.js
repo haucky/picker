@@ -1,4 +1,5 @@
-// Sprachmodell-Zugriff für alle Features. Standard ist ein lokales Modell über Ollama am eigenen Computer (nichts
+// Sprachmodell-Zugriff für alle Features. Vorrang hat ein OpenAI-kompatibler Server unter http://127.0.0.1:3000/v1
+// (ohne API-Token): Ist er erreichbar, wird immer er genommen (abschaltbar in Settings). Sonst gilt: Standard ist ein lokales Modell über Ollama am eigenen Computer (nichts
 // verlässt das Gerät); Tinfoil Private Inference (verschlüsselt, Attestierung der Enclave über das offizielle SDK) ist
 // Option B und muss eigens eingeschaltet werden – auch wenn ein Key eingetragen ist. Ist beides an, wird lokal zuerst
 // versucht und nur bei nicht erreichbarem Server Tinfoil genommen. Ohne beides gibt es keine KI-Funktionen; die App
@@ -33,6 +34,15 @@ export const setLocalUrl = (v) => { put('ai-local-url', String(v).trim().replace
 export const localModel = (tier) => get('ai-local-model:' + tier) || DEFAULT_LOCAL[tier];
 export const setLocalModel = (tier, v) => put('ai-local-model:' + tier, String(v).trim(), DEFAULT_LOCAL[tier]);
 
+export const DEFAULT_OPENAI_URL = 'http://127.0.0.1:3000/v1';
+/** OpenAI-kompatibel: standardmäßig an (abschaltbar); Modell leer = erstes Modell, das der Server unter /models nennt. */
+export const openaiOn = () => get('ai-openai-off') !== '1';
+export const setOpenaiOn = (on) => { put('ai-openai-off', on ? '' : '1'); openaiOk = null; };
+export const openaiUrl = () => (get('ai-openai-url') || DEFAULT_OPENAI_URL).replace(/\/+$/, '');
+export const setOpenaiUrl = (v) => { put('ai-openai-url', String(v).trim().replace(/\/+$/, ''), DEFAULT_OPENAI_URL); openaiOk = null; };
+export const openaiModel = (tier) => get('ai-openai-model:' + tier) || openaiModels[0] || '';
+export const setOpenaiModel = (tier, v) => put('ai-openai-model:' + tier, String(v).trim(), '');
+
 export const tinfoilOn = () => get('ai-tinfoil-on') === '1';
 export const setTinfoilOn = (on) => put('ai-tinfoil-on', on ? '1' : '');
 export const tinfoilModel = (tier) => get(TINFOIL_STORE[tier]) || DEFAULT_TINFOIL[tier];
@@ -56,19 +66,46 @@ export function setApiKey(key) {
 let localOk = null;
 let localFailedAt = 0;
 const RETRY_LOCAL = 60000;
+// OpenAI-kompatibler Server: genauso, nur wird er von selbst geprüft (probeOpenai), damit er Vorrang bekommt, sobald er läuft.
+let openaiOk = null;
+let openaiFailedAt = 0;
+let openaiModels = []; // Modell-IDs laut Server (/models)
+let openaiProbe = null;
+const RETRY_OPENAI = 30000;
+const openaiRetryDue = () => openaiOk !== false || Date.now() - openaiFailedAt > RETRY_OPENAI;
+const openaiUsable = () => openaiOn() && openaiOk === true;
+function openaiDown() { openaiOk = false; openaiFailedAt = Date.now(); }
+
+/** Prüfen, ob der OpenAI-kompatible Server läuft (GET /models, kurz); merkt sich das Ergebnis und die Modelle. */
+export function probeOpenai({ force = false } = {}) {
+  if (!openaiOn()) return Promise.resolve(false);
+  if (openaiProbe) return openaiProbe;
+  if (!force && openaiOk === true) return Promise.resolve(true);
+  if (!force && !openaiRetryDue()) return Promise.resolve(false);
+  openaiProbe = listOpenaiModels({ signal: AbortSignal.timeout(2000) })
+    .then((ids) => { openaiModels = ids; openaiOk = true; return true; }, () => { openaiDown(); return false; })
+    .finally(() => { openaiProbe = null; });
+  return openaiProbe;
+}
+
 const localUsable = () => localOn() && (localOk !== false || Date.now() - localFailedAt > RETRY_LOCAL);
 const tinfoilUsable = () => tinfoilOn() && !!apiKey() && navigator.onLine;
 
-/** Kann gerade angefragt werden (lokal eingeschaltet oder Tinfoil eingeschaltet mit Key und online)? */
-export const llmAvailable = () => localUsable() || tinfoilUsable();
+/**
+ * Kann gerade angefragt werden (OpenAI-kompatibler Server erreichbar, lokal eingeschaltet oder Tinfoil eingeschaltet
+ * mit Key und online)? Stößt nebenbei die Prüfung des OpenAI-kompatiblen Servers an (Ergebnis gilt ab dem nächsten Aufruf).
+ */
+export const llmAvailable = () => { probeOpenai(); return openaiUsable() || localUsable() || tinfoilUsable(); };
 
-/** Welcher Anbieter als Nächstes gefragt wird: 'local' | 'tinfoil' | null. */
-export const provider = () => (localUsable() ? 'local' : tinfoilUsable() ? 'tinfoil' : null);
+/** Welcher Anbieter als Nächstes gefragt wird: 'openai' | 'local' | 'tinfoil' | null. */
+export const provider = () => (openaiUsable() ? 'openai' : localUsable() ? 'local' : tinfoilUsable() ? 'tinfoil' : null);
 
 /** Modell für einen Zweck ('correct' | 'prompt' | 'judge') bzw. eine Stufe beim gerade genutzten Anbieter (z. B. für Caches). */
 export function modelFor(purpose) {
   const tier = TIER_OF[purpose] || purpose;
-  return provider() === 'tinfoil' ? 'tinfoil:' + tinfoilModel(tier) : 'local:' + localModel(tier);
+  const p = provider();
+  if (p === 'openai') return 'openai:' + openaiModel(tier);
+  return p === 'tinfoil' ? 'tinfoil:' + tinfoilModel(tier) : 'local:' + localModel(tier);
 }
 
 let client = null;    // Promise<TinfoilAI> für clientKey
@@ -171,6 +208,62 @@ export async function listLocalModels({ signal } = {}) {
   return ((await res.json()).models || []).map((m) => m.name).sort();
 }
 
+/* ---------- OpenAI-kompatibel (z. B. http://127.0.0.1:3000/v1, ohne Token) ---------- */
+
+/** Modelle auf dem OpenAI-kompatiblen Server (IDs, in der Reihenfolge des Servers). */
+export async function listOpenaiModels({ signal } = {}) {
+  const res = await fetch(openaiUrl() + '/models', { signal });
+  if (!res.ok) throw new Error('OpenAI-Server: ' + res.status);
+  return ((await res.json()).data || []).map((m) => m.id);
+}
+
+async function chatOpenai({ model, messages, maxTokens, temperature, signal, onDelta }) {
+  if (!model) {
+    await probeOpenai({ force: true });
+    model = openaiModels[0];
+    if (!model) throw new LLMError('no-openai', `OpenAI-kompatibler Server (${openaiUrl()}) nicht erreichbar`);
+  }
+  let res;
+  try {
+    res = await fetch(openaiUrl() + '/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature, stream: !!onDelta }),
+      signal,
+    });
+  } catch {
+    if (signal?.aborted) throw signal.reason;
+    throw new LLMError('no-openai', `OpenAI-kompatibler Server (${openaiUrl()}) nicht erreichbar`);
+  }
+  if (!res.ok) {
+    const msg = await res.text().catch(() => '');
+    throw new LLMError(res.status === 404 ? 'no-model' : 'openai-error', `OpenAI-Server: ${res.status} ${msg.slice(0, 200)}`);
+  }
+  if (!onDelta) return (await res.json()).choices?.[0]?.message?.content ?? '';
+  // Server-Sent Events: Zeilen „data: {…}“, Schluss mit „data: [DONE]“
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  let out = '';
+  for (;;) {
+    const { value, done } = await abortable(reader.read(), signal);
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let nl;
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith('data:')) continue;
+      const data = line.slice(5).trim();
+      if (data === '[DONE]') return out;
+      let d;
+      try { d = JSON.parse(data).choices?.[0]?.delta?.content; } catch { continue; }
+      if (d) { out += d; onDelta(d, out); }
+    }
+  }
+  return out;
+}
+
 /* ---------- Tinfoil ---------- */
 
 async function chatTinfoil({ model, messages, maxTokens, temperature, signal, onDelta }) {
@@ -202,13 +295,13 @@ async function chatTinfoil({ model, messages, maxTokens, temperature, signal, on
 /* ---------- Gemeinsam ---------- */
 
 /**
- * Eine Chat-Anfrage → Antworttext. Lokal zuerst (falls eingeschaltet), sonst bzw. bei nicht erreichbarem Server
+ * Eine Chat-Anfrage → Antworttext. Ist der OpenAI-kompatible Server erreichbar, immer er; sonst lokal zuerst (falls eingeschaltet), sonst bzw. bei nicht erreichbarem Server
  * Tinfoil (falls eingeschaltet).
  * opts: { system, user | messages, purpose ('correct' | 'prompt' | 'judge') bzw. tier ('fast' | 'good'),
- *         via ('local' | 'tinfoil': nur diesen Anbieter, z. B. zum Testen), model (überschreibt das der Stufe),
+ *         via ('openai' | 'local' | 'tinfoil': nur diesen Anbieter, z. B. zum Testen), model (überschreibt das der Stufe),
  *         maxTokens, temperature, context (Kontextfenster lokal, Standard je Stufe), timeout (ms), signal,
  *         onDelta(stück, bisher) – dann wird gestreamt }
- * Fehler: LLMError('no-ai'|'no-local'|'no-model'|'no-key'|'offline'), DOMException AbortError (signal) bzw.
+ * Fehler: LLMError('no-ai'|'no-openai'|'no-local'|'no-model'|'no-key'|'offline'), DOMException AbortError (signal) bzw.
  * TimeoutError (timeout), sonst API-Fehler.
  */
 export async function chat({
@@ -219,6 +312,18 @@ export async function chat({
   const sig = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
   const msgs = messages || [system && { role: 'system', content: system }, { role: 'user', content: user }].filter(Boolean);
   const opts = { messages: msgs, maxTokens, temperature, signal: sig, onDelta };
+  if (!via && openaiOn() && openaiOk !== true && openaiRetryDue()) await probeOpenai();
+  if (via === 'openai' || (!via && openaiUsable())) {
+    try {
+      const out = await chatOpenai({ ...opts, model: model || openaiModel(tier) });
+      openaiOk = true;
+      return out;
+    } catch (err) {
+      if (err?.code !== 'no-openai' || via === 'openai') throw err;
+      openaiDown(); // Server weg: lokal bzw. Tinfoil, in 30 s wieder prüfen
+      if (!localUsable() && !tinfoilUsable()) throw err;
+    }
+  }
   if (via === 'local' || (!via && localUsable())) {
     try {
       const out = await chatLocal({ ...opts, context, model: model || localModel(tier) });

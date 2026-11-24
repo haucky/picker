@@ -6,7 +6,8 @@ import { exportName, setExportName } from './export.js';
 import {
   apiKey, setApiKey, chat, listModels, listLocalModels, TIERS, TIER_LABEL, DEFAULT_LOCAL_URL, DEFAULT_LOCAL,
   DEFAULT_TINFOIL, localOn, setLocalOn, localUrl, setLocalUrl, localModel, setLocalModel, tinfoilOn, setTinfoilOn,
-  tinfoilModel, setTinfoilModel, unloadLocal,
+  tinfoilModel, setTinfoilModel, unloadLocal, DEFAULT_OPENAI_URL, openaiOn, setOpenaiOn, openaiUrl, setOpenaiUrl,
+  openaiModel, setOpenaiModel, listOpenaiModels, probeOpenai,
 } from './llm.js';
 import { PROMPTS_PATH, parsePrompts } from './prompts.js';
 import { contextOf } from './studydoc.js';
@@ -98,7 +99,7 @@ function nameInput() {
   });
 }
 
-let localModels, tinfoilModels, promptsInfo;
+let localModels, tinfoilModels, openaiModels, promptsInfo;
 
 const textField = (label, value, placeholder, onchange, attrs = {}) => h('label', { class: 'settings-model' },
   h('span', { class: 'kv-label' }, label),
@@ -106,6 +107,39 @@ const textField = (label, value, placeholder, onchange, attrs = {}) => h('label'
 
 const toggle = (label, on, onchange) => h('label', { class: 'settings-toggle' },
   h('input', { type: 'checkbox', checked: on, onchange: (e) => onchange(e.target.checked) }), h('span', {}, label));
+
+/** Gespeicherter Wert (leer = Standard). */
+const get = (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
+
+/** KI über einen OpenAI-kompatiblen Server (ohne Token): an/aus, Server, Modelle je Stufe, Testen. */
+function openaiAI() {
+  const test = h('button', { type: 'button', class: 'btn small', onclick: async () => {
+    test.disabled = true;
+    try {
+      const have = await listOpenaiModels({ signal: AbortSignal.timeout(5000) });
+      openaiModels.replaceChildren(...have.map((id) => h('option', { value: id })));
+      if (!have.length) throw new Error('Server nennt keine Modelle (/models)');
+      if (!openaiOn()) { setOpenaiOn(true); onBox.checked = true; }
+      await probeOpenai({ force: true });
+      const models = [...new Set(TIERS.map(openaiModel))];
+      for (const model of models) await chat({ user: 'Antworte nur mit: OK', model, via: 'openai', maxTokens: 5, timeout: 120000 });
+      ui.toast(`OpenAI-kompatibel verbunden ✓ (${models.join(', ')})`, 4000);
+    } catch (err) {
+      ui.toast('Fehlgeschlagen: ' + (err.name === 'TimeoutError' || err.name === 'TypeError'
+        ? `Server unter ${openaiUrl()} nicht erreichbar (läuft er, erlaubt er CORS?)` : err.message), 7000);
+    } finally {
+      test.disabled = false;
+    }
+  } }, 'Testen');
+  const box = toggle('Verwenden, wenn erreichbar (hat dann Vorrang)', openaiOn(), (on) => setOpenaiOn(on));
+  const onBox = box.querySelector('input');
+  return [
+    h('div', { class: 'settings-key' }, box, test),
+    textField('Server', openaiUrl(), DEFAULT_OPENAI_URL, (e) => { setOpenaiUrl(e.target.value); e.target.value = openaiUrl(); }),
+    ...TIERS.map((tier) => textField('Modell ' + TIER_LABEL[tier], get('ai-openai-model:' + tier), 'erstes des Servers',
+      (e) => { setOpenaiModel(tier, e.target.value); e.target.value = get('ai-openai-model:' + tier); }, { list: 'ai-openai-models' })),
+  ];
+}
 
 /** KI lokal: an/aus, Server, Modelle je Stufe, Testen. */
 function localAI() {
@@ -299,6 +333,10 @@ function renderPairs(status) {
 /** Verfügbare Modelle als Vorschläge für die Modell-Felder (einmal pro Sitzung; Tinfoil nur eingeschaltet mit Key). */
 let modelsLoaded = false;
 function loadModels() {
+  if (openaiOn()) {
+    listOpenaiModels({ signal: AbortSignal.timeout(3000) })
+      .then((ids) => openaiModels.replaceChildren(...ids.map((id) => h('option', { value: id }))), () => {});
+  }
   if (localOn()) {
     listLocalModels({ signal: AbortSignal.timeout(3000) })
       .then((ids) => localModels.replaceChildren(...ids.map((id) => h('option', { value: id }))), () => {});
@@ -334,6 +372,7 @@ export default {
     core = ui.core;
     info = h('div', { class: 'kv' });
     localModels = h('datalist', { id: 'ai-local-models' });
+    openaiModels = h('datalist', { id: 'ai-openai-models' });
     tinfoilModels = h('datalist', { id: 'ai-tinfoil-models' });
     promptsInfo = h('div', {});
     logEl = h('div', {});
@@ -347,8 +386,15 @@ export default {
       h('h2', { class: 'section' }, 'KI'),
       h('p', { class: 'hint left' },
         'Für alle KI-Funktionen: Korrektur und Prompts auf markierten Text am Computer, KI-Aktionen an einer Frage ' +
-        '(Punkt lang drücken bzw. Rechtsklick) auch am Handy, ähnliche Fragen im Editor. Zuerst wird das lokale Modell ' +
-        'gefragt (nichts verlässt den Computer), sonst Tinfoil, wenn eingeschaltet. Ohne beides gibt es einfach keine KI-Funktionen.'),
+        '(Punkt lang drücken bzw. Rechtsklick) auch am Handy, ähnliche Fragen im Editor. Läuft der OpenAI-kompatible Server, ' +
+        'wird immer er gefragt; sonst das lokale Modell (nichts verlässt den Computer), sonst Tinfoil, wenn eingeschaltet. ' +
+        'Ohne alles gibt es einfach keine KI-Funktionen.'),
+      h('h3', { class: 'settings-sub' }, 'OpenAI-kompatibel (127.0.0.1:3000)'),
+      ...openaiAI(),
+      h('p', { class: 'hint left' },
+        'Ohne API-Token. Die App prüft von selbst, ob der Server läuft (alle 30 s erneut, solange nicht), und nimmt ihn dann ' +
+        'vor allen anderen. Modell leer = das erste, das der Server nennt.'),
+      openaiModels,
       h('h3', { class: 'settings-sub' }, 'Lokal (Ollama)'),
       ...localAI(),
       h('p', { class: 'hint left' },
