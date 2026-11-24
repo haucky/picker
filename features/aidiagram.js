@@ -15,6 +15,9 @@ Regeln:
 sequenceDiagram, stateDiagram-v2, timeline, classDiagram, erDiagram, quadrantChart) – nimm, was zum Inhalt passt.
 - Das Diagramm muss nicht alles abdecken: lieber einen Kernzusammenhang klar zeigen (Ablauf, Ursache → Wirkung, \
 Aufbau, Vergleich, Einordnung). Höchstens etwa 12 Knoten, kurze Beschriftungen in der Sprache der Frage.
+- Eher breit als hoch, damit es sich in den Lesefluss eines Textes einfügt (etwa 2:1 bis 3:1): flowchart LR statt \
+TD/TB, wenige Ebenen hintereinander statt langer senkrechter Ketten; mindmap und timeline sind ohnehin breit. \
+sequenceDiagram nur mit wenigen Teilnehmern.
 - Gültige Mermaid-Syntax (Version 12). Beschriftungen mit Sonderzeichen in Anführungszeichen, z. B. A["Text (x)"].
 - Kein Styling: kein style, classDef, class, linkStyle, %%{init}%%, keine Farben, keine click-Links, keine Icons.
 - Ausgabe genau in diesem Format, ohne weiteren Text:
